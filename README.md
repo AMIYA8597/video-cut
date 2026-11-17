@@ -51,8 +51,14 @@ your AI service, paste your key and press **Save and test** (see [Choose your AI
 
 ## Hindi-English mixed speech (Hinglish)
 
-The default Parakeet v2 speech model is English-only. For Hindi or mixed Hindi-English audio, set these in `.env`
-and restart PeakCut:
+The default Parakeet v2 speech model is English-only. For Hindi or mixed Hindi-English audio, install the optional
+Whisper package:
+
+```bash
+pip install -r requirements-whisper.txt
+```
+
+Then set these in `.env` and restart PeakCut:
 
 ```ini
 PEAKCUT_ASR_BACKEND=whisper

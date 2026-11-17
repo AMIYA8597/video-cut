@@ -26,7 +26,7 @@ def ready() -> bool:
                        for name in ("model.bin", "config.json", "tokenizer.json")) and any(
                            (d / name).is_file() and (d / name).stat().st_size > 0
                            for name in ("vocabulary.json", "vocabulary.txt"))
-        except (OSError, ValueError):
+        except (OSError, ValueError, ImportError):
             return False
     d = config.ASR_MODEL_DIR
     if not (d / "tokens.txt").is_file():
@@ -51,6 +51,11 @@ def ensure() -> None:
         if config.ASR_BACKEND == "whisper":
             try:
                 from faster_whisper.utils import download_model
+            except ImportError as e:
+                from . import whisper
+                state["error"] = whisper.HELP
+                raise RuntimeError(whisper.HELP) from e
+            try:
                 print("Downloading the multilingual speech model (one time)...", flush=True)
                 download_model(config.WHISPER_MODEL, cache_dir=str(config.MODELS_DIR / "whisper"))
                 if not ready():

@@ -153,6 +153,38 @@ class MixedSpeechTests(unittest.TestCase):
         with patch("studio.whisper.transcribe", side_effect=lambda a, p: words if a is audio and p is progress else []), patch.object(transcribe, "_take_now", side_effect=AssertionError("English-only recognizer used for mixed speech")):
             self.assertEqual(transcribe.transcribe(audio, progress), words)
 
+    def test_whisper_missing_package_gives_friendly_message_on_transcribe(self):
+        from studio import whisper
+        with patch.object(whisper, "_model", None), patch.dict(sys.modules, {"faster_whisper": None}):
+            with self.assertRaisesRegex(RuntimeError, "requirements-whisper.txt"):
+                whisper.transcribe(np.ones(16000, dtype=np.int16))
+
+    def test_whisper_missing_package_ready_returns_false(self):
+        from studio import fetch_model
+        with patch.dict(sys.modules, {"faster_whisper": None, "faster_whisper.utils": None}):
+            self.assertFalse(fetch_model.ready())
+
+    def test_whisper_missing_package_ensure_raises_friendly_error(self):
+        from studio import fetch_model
+        with patch.dict(sys.modules, {"faster_whisper": None, "faster_whisper.utils": None}):
+            with self.assertRaisesRegex(RuntimeError, "requirements-whisper.txt"):
+                fetch_model.ensure()
+            self.assertIn("requirements-whisper.txt", fetch_model.state["error"])
+
+    def test_whisper_missing_package_safe_friendly_explains_error(self):
+        from studio import safe
+        err = ModuleNotFoundError("No module named 'faster_whisper'")
+        self.assertIn("requirements-whisper.txt", safe.friendly(err))
+
+    def test_whisper_missing_package_blocks_job_creation(self):
+        from fastapi import HTTPException
+        from studio import server, whisper
+        with patch.object(whisper, "installed", return_value=False):
+            with self.assertRaises(HTTPException) as ctx:
+                server._job_slots()
+            self.assertEqual(ctx.exception.status_code, 503)
+            self.assertIn("requirements-whisper.txt", str(ctx.exception.detail))
+
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(MixedSpeechTests)

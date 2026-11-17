@@ -5,8 +5,27 @@ import numpy as np
 
 from . import config
 
+HELP = ("Whisper speech recognition is turned on, but the faster-whisper package is not installed. "
+        "Run:  pip install -r requirements-whisper.txt")
+
 _lock = threading.Lock()
 _model = None
+
+
+def installed() -> bool:
+    try:
+        import faster_whisper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def explain(e) -> str:
+    """The plain-words version of faster-whisper not being installed, or "" if the error is something else."""
+    text = str(e)
+    if "faster_whisper" in text or "faster-whisper" in text:
+        return HELP
+    return ""
 
 
 def transcribe(audio: np.ndarray, on_progress=None) -> list:
@@ -18,7 +37,10 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
         return []
     with _lock:
         if _model is None:
-            from faster_whisper import WhisperModel
+            try:
+                from faster_whisper import WhisperModel
+            except ImportError as e:
+                raise RuntimeError(HELP) from e
             from . import transcribe as speech
             model = WhisperModel(config.WHISPER_MODEL, device=speech.PROVIDER,
                                  compute_type="int8" if speech.PROVIDER == "cpu" else "float16",
