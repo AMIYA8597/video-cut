@@ -139,8 +139,6 @@ def youtube_words(url: str):
         key = next((c for c in candidates if c and c in auto), None)
         if not key:
             key = next((k for k in auto if k.endswith("-orig")), None)
-        if not key and "en" in auto:
-            key = "en"
         track = next((f for f in auto.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None) if key else None
         if not track:
             return None
