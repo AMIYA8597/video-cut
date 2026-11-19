@@ -48,6 +48,7 @@ def main() -> int:
         runs = [("permissions", ["tests/test_permissions.py", BASE, str(ROOT), sys.executable]),
                 ("abuse and limits", ["tests/test_abuse.py", BASE, str(ROOT)]),
                 ("queue under load", ["tests/test_load_queue.py", str(ROOT)]),
+                ("a day-long video in little memory", ["tests/test_longvideo.py"]),
                 ("deleting and bulk actions", ["tests/test_delete.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
                 ("AI services", ["tests/test_ai.py"]),
