@@ -11,7 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import brain, config, creators, ctx, facecam, games, load, media, quality, render, roman, safe, transcribe, usage
+from . import brain, config, creators, ctx, facecam, games, hashtags, load, media, quality, render, roman, safe, transcribe, usage
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -766,6 +766,8 @@ def _run_job(job):
                 c["hook"] = o["hook_text"]
             if o.get("description_text"):  # ...and their own description, exactly as written
                 c["description"], c["fixed_description"] = o["description_text"], True
+            else:                          # no description of their own: 3 to 5 fitting hashtags go at the end of the AI's
+                hashtags.apply(c, words, job["title"], job["uploader"], game)
             # Only the gameplay layout uses a webcam, so it is only looked for then, and only once: a
             # stream with no webcam is not looked for again on every clip of it.
             if o["layout"] == "gameplay" and face is False:
