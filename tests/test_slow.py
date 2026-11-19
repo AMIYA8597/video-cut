@@ -75,7 +75,12 @@ try:
 except ValueError:
     check("a service that is not custom still needs a model", True)
 ai._auto.update({"for": None, "at": 0.0})
+LISTED[:] = ["gemini-flash", "free-router", "auto", "zzz"]
+check("auto is preferred over free-router when both are listed", ai.use_models() == ["auto"], str(ai.use_models()))
+ai._auto.update({"for": None, "at": 0.0})
 LISTED[:] = ["gemini-flash", "free-router", "zzz"]
+check("free-router is used when there is no auto", ai.use_models() == ["free-router"], str(ai.use_models()))
+ai._auto.update({"for": None, "at": 0.0})
 
 t = ai.test()
 check("the test works with no model chosen", t["ok"] and "free-router" in t["model"] and asked[-1][0] == "free-router", str(t))
@@ -121,6 +126,30 @@ took = time.time() - began
 check("each turn waits for the pause since the last", 3.5 <= took < 6.5, f"{took:.1f}s")
 check("no waiting when slow mode is off", (ai.save("custom", "", "http://127.0.0.1:3001/v1", None, slow=False, wait=2), ai.pace_seconds())[1] == 0)
 check("a normal service is not slow unless asked", (ai.save("gemini", "gemini-2.5-flash", "", "k" * 20), ai.current()["slow"])[1] is False)
+
+# ---- a router with no keys of its own is told apart from a refused key
+why = ai.explain('HTTP 503 {"error":{"message":"No candidate model has a configured, usable provider key. Add provider API keys in the dashboard.","code":"no_providers_configured"}}')
+check("a router with no provider keys is not blamed on your key", "no working keys" in why and "refused the key" not in why, why)
+check("a router that has run out says so", "used up" in ai.explain('HTTP 429 {"error":{"message":"All models exhausted","code":"routing_exhausted"}}'))
+check("a real refused key still says so", "refused the key" in ai.explain('HTTP 401 {"error":{"message":"Invalid API key"}}'))
+tries = []
+
+
+def refuses_json_mode(url, json=None, headers=None, timeout=None, **_k):  # noqa: A002
+    tries.append(sorted(k for k in json if k in ("temperature", "response_format")))
+    if "response_format" in json:
+        return Reply(429, {"error": {"message": "1 platform cannot honor response_format"}})
+    return Reply(200, {"choices": [{"message": {"content": "[\"ok\"]"}}], "usage": {}})
+
+
+ai.httpx.post = refuses_json_mode
+ai.save("groq", "m", "", "k" * 20, slow=False)
+ai.call("m", "hi", brain.SCHEMA)
+check("a 429 about response_format is retried without it", tries[-1] == [] and len(tries) == 3, str(tries))
+tries.clear()
+ai.save("custom", "m", "http://127.0.0.1:3001/v1", None, slow=False)
+ai.call("m", "hi", brain.SCHEMA)
+check("a custom service is not sent JSON mode at all", tries == [[]], str(tries))
 
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil  # noqa: E402

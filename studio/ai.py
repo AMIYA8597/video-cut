@@ -103,7 +103,7 @@ def shown_model() -> str:
 
 
 _auto = {"for": None, "name": "", "at": 0.0}
-AUTO_NAMES = ("free-router", "auto", "router", "free", "default")    # what routers of free models call their "pick for me"
+AUTO_NAMES = ("auto", "free-router", "router", "free", "default")    # what routers of free models call their "pick for me"
 
 
 def _auto_model(c) -> str:
@@ -282,6 +282,11 @@ def explain(e) -> str:
     """What went wrong with an AI call, in words the owner can act on."""
     text, low = str(e), str(e).lower()
     name = shown_model() or "?"
+    if "no_providers_configured" in low or "no usable provider key" in low or "no usable key" in low:
+        return (f"{label()} answered, but it has no working keys of its own to pass the request on. Open {label()}'s own "
+                "dashboard and add keys for the free services it uses, then test again.")
+    if "routing_exhausted" in low or "all models exhausted" in low:
+        return f"{label()} has used up every free model for now. Wait a little, or add more keys to {label()}, then try again."
     if "404" in text or "not found" in low or "does not exist" in low or "unknown model" in low or "not_found" in low:
         if not models() and provider() == "custom":
             return f"{label()} did not accept its automatic model. Open Settings, AI, press Find models and pick one from the list."
@@ -513,10 +518,15 @@ def _openai(model, prompt, schema, timeout=None):
     body = {"model": model, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}], "stream": False}
     # Most services accept these two extras; a few models refuse one of them, so they are dropped on a refusal.
     extras = [{"temperature": 0.4, "response_format": {"type": "json_object"}}, {"response_format": {"type": "json_object"}}, {}]
+    if provider() == "custom":
+        # A router that rotates between free models may land on one that cannot do JSON mode, and then fails the whole
+        # request. The prompt already asks for JSON only, and the answer is read leniently, so nothing extra is sent.
+        extras = [{}]
     r = None
     for extra in extras:
         r = httpx.post(f"{base_url()}/chat/completions", json={**body, **extra}, headers=headers, timeout=timeout or 180)
-        if r.status_code not in (400, 422):
+        # a refusal of an extra setting is usually a 400 or 422, but some routers answer 429 or 503 that mention it
+        if r.status_code not in (400, 422) and not (r.status_code in (429, 503) and "response_format" in r.text):
             break
     if r.status_code != 200:
         _fail(r, model)
