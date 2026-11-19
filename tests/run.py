@@ -61,7 +61,8 @@ def main() -> int:
                 ("your own big text on the clips", ["tests/test_bigtext.py"]),
                 ("hashtags made without an AI", ["tests/test_hashtags.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
-                ("AI services", ["tests/test_ai.py", "tests/test_slow.py"]),
+                ("AI services", ["tests/test_ai.py"]),
+                ("going slowly, for free AI services", ["tests/test_slow.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("turning captions off and back on", ["tests/test_captions.py"]),
@@ -82,7 +83,8 @@ def main() -> int:
                 ("the storage folder: full drive, open, move", ["tests/test_storage.py"]),
                 ("security: visitor address, email addresses, Google sign-in, prompts", ["tests/test_hardening.py"]),
                 ("long logs, the machine monitor, failed recordings, admin day totals", ["tests/test_robustness.py"]),
-                ("live recording stops and empty stream URLs", ["tests/test_live.py"])]
+                ("live recording stops and empty stream URLs", ["tests/test_live.py"]),
+                ("post text: write again with AI, edit, post without re-making", ["tests/test_post_text.py"])]
         for name, args in runs:
             print(f"\n=== {name} ===", flush=True)
             r = subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
