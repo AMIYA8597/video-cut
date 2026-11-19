@@ -238,5 +238,3 @@ post, and for following the terms of the sites you fetch from and post to.
 
 [MIT](LICENSE). Caption fonts in `studio/fonts/` (Anton, Archivo Black, Poppins) are under the SIL Open Font
 License; the licence texts are in the same folder.
-#   v i d e o - c u t  
- 
