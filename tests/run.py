@@ -50,7 +50,7 @@ def main() -> int:
                 ("queue under load", ["tests/test_load_queue.py", str(ROOT)]),
                 ("deleting and bulk actions", ["tests/test_delete.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
-                ("AI services", ["tests/test_ai.py"]),
+                ("AI services", ["tests/test_ai.py", "tests/test_slow.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("turning captions off and back on", ["tests/test_captions.py"]),
