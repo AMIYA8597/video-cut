@@ -804,7 +804,9 @@ def create_from_file(file: UploadFile = File(...), options: str = Form("{}"), cr
             with _create_lock:
                 _job_slots()
                 job = jobs.create({"type": "file", "path": str(tmp), "name": name}, opts, enqueue=False, creator=creator or None)
-        except (ValueError, TypeError):
+        except ValueError as e:
+            raise HTTPException(400, str(e) or "Those options aren't valid.")
+        except TypeError:
             raise HTTPException(400, "Those options aren't valid.")
         _disk.pop(ctx.uid(), None)
         dest = jobs.job_dir(job["id"]) / ("source" + ext)
@@ -876,7 +878,9 @@ def upload_start(body: dict = Body(...)):
     opts = body.get("options") if isinstance(body.get("options"), dict) else {}
     try:
         jobs.clean_options(opts)                 # refused now rather than after the whole file has been sent
-    except (ValueError, TypeError):
+    except ValueError as e:
+        raise HTTPException(400, str(e) or "Those options aren't valid.")
+    except TypeError:
         raise HTTPException(400, "Those options aren't valid.")
     _up_sweep()
     mine = 0
@@ -940,7 +944,9 @@ def upload_finish(upid: str):
                 _job_slots()
                 job = jobs.create({"type": "file", "path": "", "name": meta["name"]}, meta["options"], enqueue=False,
                                   creator=meta["creator"] or None)
-        except (ValueError, TypeError):
+        except ValueError as e:
+            raise HTTPException(400, str(e) or "Those options aren't valid.")
+        except TypeError:
             raise HTTPException(400, "Those options aren't valid.")
         dest = jobs.job_dir(job["id"]) / ("source" + meta["ext"])
         try:
@@ -999,6 +1005,21 @@ def clip_preview(jid: str, cid: str, body: dict = Body(...)):
     except Exception as e:  # noqa: BLE001 - a preview must never break the page
         raise HTTPException(500, f"Could not draw this preview: {safe.friendly(e, 200)}")
     return {"preview": name, "version": clip.get("version", 0)}
+@app.post("/api/jobs/{jid}/stop")
+def stop_job(jid: str):
+    job = _job_or_404(jid)
+    if not jobs.stop(jid):
+        raise HTTPException(409, "This video isn't being worked on, so there is nothing to stop.")
+    return jobs.public(job)
+
+
+@app.post("/api/jobs/{jid}/retry")
+def retry_job(jid: str):
+    job = _job_or_404(jid)
+    _throttle("retry:" + ctx.uid(), 20, 600, "That's a lot of retries in a short time. Wait a few minutes.")
+    if not jobs.retry(jid):
+        raise HTTPException(409, "Only a video that stopped or failed can be started again.")
+    return jobs.public(job)
 
 
 @app.delete("/api/jobs/{jid}")

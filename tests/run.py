@@ -73,6 +73,7 @@ def main() -> int:
                 ("ad breaks and frozen screens", ["tests/test_static.py"]),
                 ("answers that are not quite right", ["tests/test_answer.py"]),
                 ("knowing which game a stream is", ["tests/test_games.py"]),
+                ("YouTube-style times, Most replayed, Stop and Retry, hidden swear words", ["tests/test_moments.py"]),
                 ("finding the facecam in a gaming stream", ["tests/test_facecam.py"]),
                 ("a small facecam in a busy game, wherever it is", ["tests/test_facecam_positions.py"]),
                 ("recording time: the buffer knows where each piece sits", ["tests/test_live_times.py"]),
