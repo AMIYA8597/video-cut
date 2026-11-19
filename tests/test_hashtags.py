@@ -51,6 +51,14 @@ check("a description the person wrote is left exactly as it is", own["descriptio
 empty = {"start": 10, "end": 40, "description": "", "hashtags": []}
 h.apply(empty, words, TITLE, "Kai Cenat Live", "GTA 6")
 check("with no description at all, the tags are the description", empty["description"].startswith("#") and NL not in empty["description"], empty["description"])
+# ---- seen on a real TED clip: "bring" (only repeated) and "she's" (#shes) became tags
+talk = "she said bring it bring it bring it and she's she's she's drawing a picture"
+got = h.make(talk, "Do schools kill creativity? | TED", "TED", None, "story", ["ted", "story", "comedy", "drawing"])
+check("a word that is only repeated is not a tag", "bring" not in got, got)
+check("a shortened word is never a tag", "shes" not in got, got)
+check("the AI's own tags come first, three of them", got[:3] == ["ted", "story", "comedy"], got)
+check("a name said twice is still a tag", "robinson" in h.make("Robinson said this. And then Robinson said that", "TED talk", "", None, "story", []))
+
 check("a clip made before this keeps posting as it did", posting._caption({"description": "D", "hashtags": ["a", "b"]}, {"post_footer": "F"}) == "D" + NL * 2 + "#a #b" + NL * 2 + "F")
 
 print("ALL PASSED" if not fails else f"{len(fails)} failed")

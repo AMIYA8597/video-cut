@@ -59,21 +59,24 @@ def numbered(title) -> list:
 
 
 def keywords(text, title="", count=2) -> list:
-    """The words that matter most in what was said: said more than once, or a name (capitalised in the middle
-    of a sentence), and more so if the title has them too."""
+    """The words that matter most in what was said: a name (capitalised in the middle of a sentence) or a word the
+    title has too, and more so the more often it is said. A word that is only repeated ("bring", "going") is not a
+    tag anyone searches for, and a shortened word ("she's") would come out as nonsense (#shes), so neither is used."""
     raw = str(text or "").split()
     in_title = {w.lower() for w in _WORD.findall(str(title or ""))}
-    score = {}
+    score, special = {}, set()
     for i, r in enumerate(raw):
         m = _WORD.search(r)
-        if not m:
+        if not m or "'" in m.group(0).strip("'") or "’" in r:
             continue
         w = m.group(0).strip("'").lower()
         if w in STOP or len(w) < 4 or not _tag(w):
             continue
         name = r[:1].isupper() and i > 0 and raw[i - 1][-1:] not in ".?!"
+        if name or w in in_title:
+            special.add(w)
         score[w] = score.get(w, 0) + 1 + (2 if name else 0) + (2 if w in in_title else 0)
-    best = sorted((w for w in score if score[w] >= 2), key=lambda w: (-score[w], -len(w), w))
+    best = sorted((w for w in score if score[w] >= 2 and w in special), key=lambda w: (-score[w], -len(w), w))
     return best[:count]
 
 
@@ -89,7 +92,7 @@ def make(text="", title="", uploader="", game=None, category="other", ai_tags=()
     for t in games.tags_of(game)[:1]:       # the game's main tag; its look-alikes would only use up the room
         add(t)
     add(channel_tag(uploader))
-    for t in list(ai_tags or [])[:2]:
+    for t in list(ai_tags or [])[:3]:       # the AI read the whole moment: its tags come before guessed ones
         add(t)
     for t in keywords(text, title):
         add(t)
