@@ -217,6 +217,7 @@ img.avatar.ring{background:transparent}
 :where(input:not([type=checkbox],[type=radio],[type=file],[type=range]),select,textarea):focus{background:#fff;border-color:var(--brand)}
 input:not([type=checkbox],[type=radio],[type=range]):focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
 input::placeholder,textarea::placeholder{color:var(--faint)}
+textarea{height:auto;padding:10px 12px;resize:vertical}
 label.f{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim);font-weight:600}
 label.sw{display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--text);font-weight:600}
 label.sw input{appearance:none;width:38px;height:22px;border-radius:999px;background:#DCD2D0;position:relative;cursor:pointer;flex:none;margin:0}
@@ -390,7 +391,12 @@ img.av{object-fit:cover}
 .lay-prev .ph::before{content:"";position:absolute;inset:0;background:linear-gradient(160deg,#B4643A,#5E3A2A);filter:blur(3px);opacity:.75}
 .lay-prev .ph i{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:16px;background:linear-gradient(135deg,#FF8B33,#FFB27A)}
 .lay-prev.zoom .ph i{left:-6px;right:-6px;height:24px}
-.lay-prev.crop .ph i{left:0;right:0;top:0;height:100%;transform:none}
+.lay-prev.crop .ph i,.lay-prev.left .ph i,.lay-prev.right .ph i,.lay-prev.gameplay .ph i{left:0;right:0;top:0;height:100%;transform:none}
+.lay-prev.left .ph i{background:linear-gradient(90deg,#FFB27A,#FF8B33 45%,#5E3A2A)}
+.lay-prev.right .ph i{background:linear-gradient(270deg,#FFB27A,#FF8B33 45%,#5E3A2A)}
+.lay-prev.fit .ph{background:#000}.lay-prev.fit .ph::before{display:none}
+.lay-prev.split .ph i{top:0;height:23px;transform:none}
+.lay-prev.split .ph::before{inset:25px 0 0 0;filter:none;opacity:1;background:linear-gradient(135deg,#FFB27A,#FF8B33)}
 .seg{display:flex;gap:4px;background:#fff;border-radius:10px;padding:4px}
 .composer.compact .seg{background:var(--muted)}
 .seg button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 6px;border:0;border-radius:7px;background:transparent;color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -1389,7 +1395,7 @@ function drawAdd(variant) {
     </div></div></form>`;
   drawAtt();
 }
-const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", gameplay:"Gameplay + facecam"};
+const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", left:"Keep left", right:"Keep right", fit:"Black bars", split:"Split screen", gameplay:"Gameplay + facecam"};
 const CAP_LOOK = {bounce:{font:"'Archivo Black'", hl:"#FFFF00", up:true}, hype:{font:"Anton", hl:"#FF3C3C", up:true}, clean:{font:"Poppins", hl:"#6BD7FF", up:false, w:800}};
 function capPrev(k) {
   const s = CAP_LOOK[k] || {font:"inherit", hl:"#FF8B33", up:true};
@@ -2121,9 +2127,27 @@ async function drawSettings() {
           ${card("youtube", "YouTube", yt, "#FF0000", "Post clips to your channel as Shorts.")}
           ${card("instagram", "Instagram", ig, "linear-gradient(45deg,#F58529,#DD2A7B,#8134AF)", "Post clips as Reels. Needs a Creator or Business account.")}
           ${card("tiktok", "TikTok", tt, "#000", "Post clips straight to your TikTok.")}
-        </div></section>`;
+        </div></section>${admin ? await ytCookiesCard(yt) : ""}`;
     }
   } catch (e) { body.innerHTML = `<div class="set-load">${esc(e.message)}</div>`; }
+}
+async function ytCookiesCard(logo) {
+  const st = await api("/api/youtube-cookies").catch(() => null);
+  if (!st) return "";
+  const open = S.setupOpen === "ytdl";
+  const act = `<button class="btn sm ${st.saved ? "ghost" : "primary"}" data-act="appsetup" data-p="ytdl">${ic("cog")}${st.saved ? "Replace" : "Add cookies"}</button>`
+    + (st.saved ? `<button class="btn sm ghost" data-act="ytcookies" data-remove="1">Remove</button>` : "");
+  const panel = open ? `<div class="appsetup">
+      <p class="sub">YouTube refuses many servers with "Sign in to confirm you're not a bot". Cookies from a signed-in YouTube account get past it. Use a spare Google account, not your main one.</p>
+      <ol><li>In a private browser window, sign in to YouTube with that account.</li>
+        <li>With an extension such as <b>Get cookies.txt LOCALLY</b>, export the cookies for youtube.com.</li>
+        <li>Paste the whole file below and save. Then close that private window without signing out.</li></ol>
+      <label class="f">cookies.txt<textarea id="ytc" rows="6" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File"></textarea></label>
+      <div class="row"><button class="btn primary" data-act="ytcookies">Save</button><button class="btn ghost" data-act="appsetup" data-p="">Close</button></div></div>` : "";
+  return `<section class="set-sec"><h2>YouTube links</h2><p class="help">Only needed when YouTube links (videos or lives) fail with "YouTube isn't letting PeakCut download".</p>
+    <div class="apps"><div class="appcard"><span class="applogo" style="background:#FF0000">${logo}</span>
+    <div class="apptx"><b>YouTube cookies</b><span>${st.saved ? `Saved ${new Date(st.updated * 1000).toLocaleString()}. Used for every YouTube link.` : "None saved."}</span></div>
+    <div class="appact">${act}</div>${panel}</div></div></section>`;
 }
 async function saveSettings() { const d = {}; $$("#sform [data-s]").forEach(i => d[i.dataset.s] = i.value); await send("/api/settings", d, "PUT"); }
 
@@ -2434,6 +2458,10 @@ document.addEventListener("click", async e => {
     if (a === "storcancel") { await send("/api/storage", {cancel: true}, "PUT"); toast("Kept the current folder", "ok"); return drawSettings(); }
     if (a === "appsetup") { S.setupOpen = d.p && S.setupOpen !== d.p ? d.p : ""; return drawSettings(); }
     if (a === "copytext") { await navigator.clipboard.writeText(d.t); return toast("Copied", "ok"); }
+    if (a === "ytcookies") {
+      await send("/api/youtube-cookies", d.remove ? {remove: true} : {text: $("#ytc").value}, "PUT");
+      S.setupOpen = ""; toast(d.remove ? "YouTube cookies removed." : "Saved. YouTube links will use them now.", "ok"); return drawSettings();
+    }
     if (a === "appsave") {
       await send("/api/apps", {platform: d.p, client_id: $("#app_id").value, client_secret: $("#app_secret").value}, "PUT");
       S.setupOpen = ""; S.status = await api("/api/status"); toast("Saved. People can connect now.", "ok"); return drawSettings();

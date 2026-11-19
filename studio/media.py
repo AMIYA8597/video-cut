@@ -20,7 +20,8 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 YT_PAUSE = 600
 _yt_refused_until = 0.0
 YT_BLOCKED = ("YouTube isn't letting PeakCut download videos right now. Upload the video file instead, or use a "
-              "Twitch or Kick link. YouTube links will be tried again in a few minutes.")
+              "Twitch or Kick link. An admin can fix this by adding YouTube cookies under Settings, Connected apps. "
+              "YouTube links will be tried again in a few minutes.")
 _BOT_CHECK = re.compile(r"not a bot|confirm you.?re not|sign in to confirm(?! your age)", re.I)
 
 
@@ -95,12 +96,17 @@ class _Quiet:
     def error(self, m): pass
 
 
+def cookie_opts() -> dict:
+    """The YouTube cookies an admin saved (Settings, Connected apps), if any. yt-dlp only sends them to YouTube."""
+    return {"cookiefile": str(config.YT_COOKIES)} if config.YT_COOKIES.is_file() else {}
+
+
 def _ydl(opts):
     import yt_dlp
     # a channel or playlist link is answered as "a list" straight away, never walked video by video
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
                              "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+                             "concurrent_fragment_downloads": 4, **cookie_opts(), **opts})
 
 
 def _video_format(height):
