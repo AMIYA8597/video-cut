@@ -217,6 +217,7 @@ img.avatar.ring{background:transparent}
 :where(input:not([type=checkbox],[type=radio],[type=file],[type=range]),select,textarea):focus{background:#fff;border-color:var(--brand)}
 input:not([type=checkbox],[type=radio],[type=range]):focus-visible,select:focus-visible,textarea:focus-visible{outline:none}
 input::placeholder,textarea::placeholder{color:var(--faint)}
+textarea{height:auto;padding:10px 12px;resize:vertical}
 label.f{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim);font-weight:600}
 label.sw{display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--text);font-weight:600}
 label.sw input{appearance:none;width:38px;height:22px;border-radius:999px;background:#DCD2D0;position:relative;cursor:pointer;flex:none;margin:0}
@@ -390,7 +391,19 @@ img.av{object-fit:cover}
 .lay-prev .ph::before{content:"";position:absolute;inset:0;background:linear-gradient(160deg,#B4643A,#5E3A2A);filter:blur(3px);opacity:.75}
 .lay-prev .ph i{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:16px;background:linear-gradient(135deg,#FF8B33,#FFB27A)}
 .lay-prev.zoom .ph i{left:-6px;right:-6px;height:24px}
-.lay-prev.crop .ph i{left:0;right:0;top:0;height:100%;transform:none}
+.lay-prev.crop .ph i,.lay-prev.left .ph i,.lay-prev.right .ph i{left:0;right:0;top:0;height:100%;transform:none}
+.lay-prev.left .ph i{background:linear-gradient(90deg,#FFB27A,#FF8B33 45%,#5E3A2A)}
+.lay-prev.right .ph i{background:linear-gradient(270deg,#FFB27A,#FF8B33 45%,#5E3A2A)}
+.lay-prev.fit .ph{background:#000}.lay-prev.fit .ph::before{display:none}
+.lay-prev.split .ph i{top:0;height:23px;transform:none}
+.lay-prev.split .ph::before{inset:25px 0 0 0;filter:none;opacity:1;background:linear-gradient(135deg,#FFB27A,#FF8B33)}
+.lay-prev.gameplay .ph i{left:2px;right:2px;top:6px;height:22px;transform:none}
+.lay-prev.gameplay .ph::after{content:"";position:absolute;left:9px;right:9px;top:32px;height:9px;background:#FFD3B8;border-radius:2px}
+.lay-prev.fill .ph i{left:0;right:0;top:0;height:100%;transform:none}
+.lay-prev.fill .ph::after{content:"";position:absolute;right:2px;top:2px;width:10px;height:8px;background:#FFD3B8;border-radius:2px}
+.lay-shot{display:flex;align-items:center;gap:12px;margin:-2px 0 12px}
+.lay-shot img{height:170px;border-radius:8px;border:1px solid var(--line);background:#1E1612}
+.lay-shot .help{margin:0}
 .seg{display:flex;gap:4px;background:#fff;border-radius:10px;padding:4px}
 .composer.compact .seg{background:var(--muted)}
 .seg button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 6px;border:0;border-radius:7px;background:transparent;color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -403,6 +416,17 @@ img.av{object-fit:cover}
 .composer.compact .range label{background:var(--muted)}
 .range input,.range input:focus{flex:1;min-width:0;height:40px;border:0;background:transparent;padding:0;font-size:15px;font-weight:600;color:var(--brand-ink);-moz-appearance:textfield}
 .range>svg{width:14px;height:14px;color:var(--faint);flex:none}
+.ohint{margin:8px 0 0;font-size:12px;color:var(--faint);line-height:1.4}
+.moments{width:100%;box-sizing:border-box;border:0;border-radius:10px;background:#fff;padding:10px 12px;font:inherit;font-size:14px;color:var(--text);resize:vertical;min-height:72px}
+.moments:focus{outline:2px solid var(--brand-soft)}
+.composer.compact .moments{background:var(--muted)}
+.xchecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.xchecks label{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:start;background:#fff;border-radius:10px;padding:10px 12px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text);transition:background-color .15s ease}
+.xchecks label:hover{background:#EDE3DB}
+.xchecks input{accent-color:var(--brand);margin:3px 0 0}
+.xchecks small{grid-column:2;font-size:12px;font-weight:500;color:var(--faint)}
+.composer.compact .xchecks label{background:var(--muted)}
+@media (max-width:640px){.xchecks{grid-template-columns:1fr}}
 @media (max-width:640px){.og{grid-template-columns:1fr}.nsteps{grid-template-columns:1fr}}
 
 /* ---------- home blocks */
@@ -444,6 +468,17 @@ img.av{object-fit:cover}
 .ai-form{display:grid;gap:18px;max-width:560px}
 .ai-form select{width:100%}
 .ai-form .with{display:flex;gap:8px}.ai-form .with input{flex:1;min-width:0}
+.model-picker{position:relative;width:100%}
+.model-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;background:var(--bg);border:1px solid var(--line-2);border-radius:var(--r);overflow:hidden;opacity:0;pointer-events:none;transition:opacity .15s ease}
+.model-drop.open{opacity:1;pointer-events:auto}
+.model-drop-head{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--muted);border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);font-weight:600}
+.model-drop-head span{color:var(--faint);font-size:11px;font-weight:500}
+.model-drop-list{max-height:220px;overflow-y:auto;padding:4px;scrollbar-width:thin;display:flex;flex-direction:column;gap:1px}
+.model-drop-item{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);font-size:13px;font-family:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.model-drop-item:hover{background:var(--muted);color:var(--brand-ink)}
+.model-drop-item.on{background:var(--brand-soft);color:var(--brand-deep);font-weight:600}
+.model-drop-item .tag{font-size:11px;padding:2px 6px;border-radius:4px;background:var(--line);color:var(--dim)}
+.model-drop-empty{padding:20px 14px;text-align:center;color:var(--faint);font-size:13px}
 .ai-form .hint{font-size:12px;font-weight:400;color:var(--dim)}
 .ai-form .hint a{color:var(--brand-deep);font-weight:600}
 .ai-form .hint a:hover{color:var(--brand-ink)}
@@ -840,6 +875,9 @@ dialog[open]{animation:fadein .16s ease}
 
 <script src="/assets/gradient-ascii.js"></script>
 <script>
+/* Twitch's player refuses to run inside a page opened by a number (127.0.0.1), but accepts "localhost", which is the
+   same machine. So a page opened by the loopback number moves itself to localhost (same port, path and #view). */
+if (/^(127\.\d+\.\d+\.\d+|\[::1\])$/.test(location.hostname)) location.replace(location.href.replace(location.hostname, "localhost"));
 /* ============================================================ helpers */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1102,7 +1140,7 @@ function drawStream() {
     pl.dataset.src = src;
     const ipHost = /^[\d.]+$|^\[/.test(location.hostname);
     pl.innerHTML = k === "twitch" && ipHost
-      ? `<div class="noembed">${platLogo(k)}<b>Twitch only plays inside sites with a web address</b><span>It will play here once PeakCut is on its domain, or open PeakCut at localhost instead of ${esc(location.hostname)}.</span><a class="btn sm" href="${esc(p.channel)}" target="_blank" rel="noopener">Watch on Twitch ${ic("upright")}</a></div>`
+      ? `<div class="noembed">${platLogo(k)}<b>Twitch only plays inside sites with a web address</b><span>It will play here once PeakCut is on its domain, or open PeakCut by its name (for example localhost) instead of the number ${esc(location.hostname)}.</span><a class="btn sm" href="${esc(p.channel)}" target="_blank" rel="noopener">Watch on Twitch ${ic("upright")}</a></div>`
       : src ? `<iframe src="${src}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${PLAT[k].name} live stream"></iframe>` : "";
   }
   const stats = [p.viewers != null ? [fmtK(p.viewers), "watching"] : null, p.started ? [since(p.started), "live for"] : null,
@@ -1171,8 +1209,8 @@ function openAcct() {
     ${on ? `<button class="danger" data-act="logout">${ic("signout")}Sign out</button>` : ""}`;
   openPop(p, $("[data-act=acctmenu]"));
 }
-document.addEventListener("click", e => { if (!e.target.closest(".pop, [data-act=bell], [data-act=acctmenu]")) closePops(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closePops(); });
+document.addEventListener("click", e => { if (!e.target.closest(".pop, [data-act=bell], [data-act=acctmenu]")) closePops(); if (!e.target.closest("#model_picker")) closeModelDrop(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closePops(); closeModelDrop(); } });
 /* new notifications pop up as a small card with a soft chime */
 let lastNotice = Number(localStorage.getItem("lastNotice") || 0), chimeCtx = null;
 function chime() {
@@ -1376,6 +1414,10 @@ function drawAdd(variant) {
         ${stepper("o_min", "Shortest", c?.min_len ?? 15, 5, 120, 5, "s")}
         ${stepper("o_maxlen", "Longest", c?.max_len ?? 60, 10, 180, 5, "s")}
       </div></div>
+      <div class="ob wide"><label class="f"><span class="ot" style="margin:0">Big text on every clip <span style="font-weight:400">(optional)</span></span>
+        <input id="o_hook" maxlength="60" autocomplete="off" value="${esc(c?.hook_text || "")}" placeholder="Left empty, the AI writes a different one for each clip" aria-label="Big text on every clip"></label></div>
+      <div class="ob wide"><label class="f"><span class="ot" style="margin:0">Description for every clip <span style="font-weight:400">(optional)</span></span>
+        <textarea id="o_desc" rows="3" maxlength="2000" placeholder="Left empty, the AI writes a different one for each clip. Write it once here and it is the description of every clip, exactly as typed." aria-label="Description for every clip">${esc(c?.description_text || "")}</textarea></label></div>
       <div class="ob"><div class="ot cap-head"><span id="o_style_label">Caption style</span>
         <label><input type="checkbox" id="o_captions" data-caption-toggle ${c?.captions === false ? "" : "checked"}>Generate captions</label></div>
         ${choice("o_style", Object.entries(S.status.styles).map(([k, v]) => ({v:k, label:v, prev:capPrev(k)})), c?.style ?? "bounce", c?.captions === false)}</div>
@@ -1384,12 +1426,20 @@ function drawAdd(variant) {
         <button type="button" data-seg="o_quality" data-v="720" aria-pressed="true">720p<small>Fast</small></button>
         <button type="button" data-seg="o_quality" data-v="1080" aria-pressed="false">1080p<small>Sharper, about 2x slower</small></button></div></div>
       <div class="ob"><div class="ot">Part of the video</div><div class="range">
-        <label>From<input id="o_from" type="number" min="0" placeholder="start" aria-label="From minute">min</label>${ic("arrowr")}
-        <label>To<input id="o_to" type="number" min="0" placeholder="end" aria-label="Up to minute">min</label></div></div>
+        <label>From<input id="o_from" type="text" inputmode="numeric" placeholder="0:00" aria-label="From (like 1:05:10, or minutes)"></label>${ic("arrowr")}
+        <label>To<input id="o_to" type="text" inputmode="numeric" placeholder="end" aria-label="Up to (like 1:30:00, or minutes)"></label></div>
+        <p class="ohint">Write times like YouTube does (1:05:10), or just minutes. Only this part is downloaded.</p></div>
+      <div class="ob wide"><div class="ot">Exact moments</div>
+        <textarea id="o_moments" class="moments" rows="3" spellcheck="false" aria-label="Exact moments, one per line"
+          placeholder="One per line, the way YouTube writes times:&#10;1:05:10 – 1:06:09 Funny moment&#10;2:30 - 3:15 Opening scene"></textarea>
+        <p class="ohint">Each line becomes one clip, exactly there. Words after the times tell the AI what happens. Only these moments are downloaded.</p></div>
+      <div class="ob wide"><div class="ot">Extras</div><div class="xchecks">
+        <label><input type="checkbox" id="o_replayed">Use YouTube's “Most replayed”<small>Clips come from the parts people rewatched most. Good for videos with little talking.</small></label>
+        <label><input type="checkbox" id="o_clean">Hide swear words<small>Stars them out in captions, hook, title and post text.</small></label></div></div>
     </div></div></form>`;
   drawAtt();
 }
-const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", gameplay:"Gameplay + facecam"};
+const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", left:"Keep left", right:"Keep right", fit:"Black bars", split:"Split screen", gameplay:"Game + facecam", fill:"Fill + facecam"};
 const CAP_LOOK = {bounce:{font:"'Archivo Black'", hl:"#FFFF00", up:true}, hype:{font:"Anton", hl:"#FF3C3C", up:true}, clean:{font:"Poppins", hl:"#6BD7FF", up:false, w:800}};
 function capPrev(k) {
   const s = CAP_LOOK[k] || {font:"inherit", hl:"#FF8B33", up:true};
@@ -1445,9 +1495,16 @@ document.addEventListener("keydown", e => {
 const targetCreator = () => creatorId() || $("#o_creator")?.value || "";
 function jobOptions() {
   const n = id => { const v = $(id).value; return v === "" ? null : Number(v); };
-  const o = {max_clips:n("#o_max"), min_len:n("#o_min"), max_len:n("#o_maxlen"), captions:$("#o_captions").checked, style:$("#o_style").value, layout:$("#o_layout").value, quality:n("#o_quality")};
-  if (n("#o_from") !== null) o.range_start = n("#o_from") * 60;
-  if (n("#o_to") !== null) o.range_end = n("#o_to") * 60;
+  const o = {max_clips:n("#o_max"), min_len:n("#o_min"), max_len:n("#o_maxlen"), captions:$("#o_captions").checked, style:$("#o_style").value, layout:$("#o_layout").value, quality:n("#o_quality"),
+    hook_text:$("#o_hook").value.trim(), description_text:$("#o_desc").value.trim()};
+  // a plain number is minutes, as before; anything else ("1:05:10", "1h5m") is read by the server
+  const t = id => { const v = $(id).value.trim(); return v === "" ? null : /^\d+(\.\d+)?$/.test(v) ? Number(v) * 60 : v; };
+  if (t("#o_from") !== null) o.range_start = t("#o_from");
+  if (t("#o_to") !== null) o.range_end = t("#o_to");
+  const m = $("#o_moments").value.trim();
+  if (m) o.moments = m;
+  if ($("#o_replayed").checked) o.replayed = true;
+  if ($("#o_clean").checked) o.clean = true;
   return o;
 }
 /* ---------- attachments: nothing starts until Make clips is pressed.
@@ -1736,12 +1793,15 @@ function jobHtml(j) {
                 j.took ? "made in " + fmt(j.took) : "", j.kind === "live" ? "recording, " + j.stage.toLowerCase() : ""].filter(Boolean).map(esc).join(" · ");
   const pic = j.thumb ? `<img src="/media/${esc(j.id)}/thumb.jpg" alt="" loading="lazy">` : ic(j.source?.type === "file" ? "film" : "link");
   return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
-      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? "" : `
+      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? (j.stage === "Stopping..." ? "" : `<button class="btn sm ghost" data-act="stopjob" data-j="${j.id}" title="Stop working on this video, and keep it to retry later" aria-label="Stop working on this video">${ic("stop")}Stop</button>`) + `
+        <button class="btn sm icon ghost" data-act="canceljob" data-j="${j.id}" title="Cancel this video" aria-label="Cancel and delete this video" style="color:var(--red,#e05)">&#x2715; Cancel</button>` : `
+        ${j.status === "stopped" || j.status === "error" ? `<button class="btn sm ghost" data-act="retryjob" data-j="${j.id}" title="Start this video again, carrying on from what was already downloaded" aria-label="Start this video again">${ic("arrowr")}Retry</button>` : ""}
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
         <label class="selck" title="Select this video and its clips"><input type="checkbox" data-sel="j:${j.id}" ${sel().has("j:" + j.id) ? "checked" : ""} aria-label="Select this video"></label>`}</div></div>
     ${busy ? `<div class="bar"><i style="width:${Math.round(j.progress * 100)}%"></i></div><p class="sub">${esc(j.stage)} · ${Math.round(j.progress * 100)}%</p>` : ""}
-    ${j.status === "done" && !j.clips.length ? `<p class="sub">${esc(j.stage)}</p>` : ""}
+    ${(j.status === "done" && !j.clips.length) || j.status === "stopped" ? `<p class="sub">${esc(j.stage)}${j.status === "stopped" ? ". Press Retry to carry on from what was already downloaded." : ""}</p>` : ""}
+    ${j.notice ? `<p class="sub">${esc(j.notice)}</p>` : ""}
     ${j.error ? `<div class="err">${esc(j.error)}<button class="rep" data-act="report" data-ctx="${esc("Video failed: " + (j.title || j.source.name || "") + " | " + j.error)}">Report this</button></div>` : ""}${j.ai?.note ? `<p class="sub">${esc(j.ai.note)}</p>` : ""}
     ${j.clips.length ? `<div class="grid">${j.clips.map(c => clipHtml(j, c)).join("")}</div>` : ""}`;
 }
@@ -1864,6 +1924,8 @@ function drawCreatorForm() {
         <label class="f">Shortest clip (seconds)<input data-k="min_len" type="number" value="${c.min_len}"></label>
         <label class="f">Longest clip (seconds)<input data-k="max_len" type="number" value="${c.max_len}"></label>
         <label class="f">Clips per video<input data-k="max_clips" type="number" value="${c.max_clips}"></label>
+        <label class="f span">Big text on every clip<input data-k="hook_text" maxlength="60" value="${esc(c.hook_text || "")}" placeholder="Left empty, the AI writes a different one for each clip"><small class="sub" style="font-weight:400">For a campaign that asks for a set line on every clip. It is shown exactly as typed.</small></label>
+        <label class="f span">Description for every clip<textarea data-k="description_text" rows="3" maxlength="2000" placeholder="Left empty, the AI writes a different one for each clip">${esc(c.description_text || "")}</textarea><small class="sub" style="font-weight:400">Written once, used as the description of every clip of this creator, exactly as typed. It is posted as it is, without the AI's hashtags.</small></label>
         <label class="f">Minutes of live stream to keep<input data-k="buffer_min" type="number" value="${c.buffer_min}"></label></div></div>
     <div class="card"><h2>Posting</h2><p class="help">${A.length ? "Choose the accounts this creator's clips go to. One account can be shared by several creators." : "No accounts are connected yet. Connect one in Settings, then come back."}</p>
       ${A.length ? `<div class="row" style="margin-bottom:16px">${A.map(a => `<label class="ck"><input type="checkbox" data-acc value="${esc(a.id)}" ${c.accounts.includes(a.id) ? "checked" : ""}>${esc(a.label)} · ${esc(a.name)}</label>`).join("")}</div>` : `<button class="btn" data-act="go" data-v="settings" style="margin-bottom:16px">${ic("cog")}Open Settings</button>`}
@@ -1873,7 +1935,8 @@ function drawCreatorForm() {
         <label class="f">Most posts per account per day<input data-k="daily_cap" type="number" value="${c.daily_cap}"></label>
         <label class="f">Who can see posts (YouTube, TikTok)<select data-k="privacy">${opts({public:"Public", unlisted:"Unlisted", private:"Private"}, c.privacy)}</select></label>
         <label class="f">Campaign pay per 1,000 views ($)<input data-k="rate_per_1k" type="number" step="0.1" min="0" value="${c.rate_per_1k}"></label>
-        <label class="f span">Line added to every post (credit, campaign tag)<input data-k="post_footer" value="${esc(c.post_footer)}" placeholder="Clipped from @streamer"></label></div></div>
+        <label class="f span">Line added to every post (credit, campaign tag)<input data-k="post_footer" value="${esc(c.post_footer)}" placeholder="Clipped from @streamer"></label>
+        <label class="sw span"><input type="checkbox" data-k="post_credit" ${c.post_credit !== false ? "checked" : ""}><span>Credit the streamer in every post<small>Adds "🎥 Credit: @their-channel" under the description, taken from their channel link.</small></span></label></div></div>
     <div class="card danger-card"><h2>Delete this creator</h2><p class="help">Removes ${esc(c.name)}, their settings and every video and clip filed under them. This cannot be undone.</p>
       <button class="btn danger" data-act="delcreator">${ic("trash")}Delete creator</button></div>
     <div class="savebar" id="savebar"><span>${ic("warn")}You have unsaved changes</span><button class="btn ghost" data-act="cdiscard">Discard</button><button class="btn primary" data-act="csave">${ic("check")}Save changes</button></div>`;
@@ -2005,6 +2068,41 @@ const setTabs = () => [
                                           ["security", "Security", "lock", "Password and signing out"]]),
   ["apps", "Connected apps", "plug", "Where your clips get posted"],
   ...(S.status.user?.is_admin ? [["storage", "Storage", "folder", "Where videos and clips are kept"]] : [])];
+let currentModels = [];
+function renderModelList(filter = "") {
+  const list = $("#model_drop_list"), count = $("#model_drop_count"), inp = $("#ai_model");
+  if (!list) return;
+  const target = filter !== undefined && filter !== null ? filter : (inp?.value || "");
+  const lastPart = target.split(",").pop().trim();
+  const q = lastPart.toLowerCase();
+  const filtered = q ? currentModels.filter(m => m.toLowerCase().includes(q)) : currentModels;
+  if (count) count.textContent = `${filtered.length} of ${currentModels.length}`;
+  if (!filtered.length) {
+    list.innerHTML = `<div class="model-drop-empty">${currentModels.length ? "No matching models" : "No models found"}</div>`;
+    return;
+  }
+  const curr = (inp?.value || "").split(",").map(x => x.trim());
+  list.innerHTML = filtered.map(m => {
+    const isSel = curr.includes(m);
+    return `<button type="button" class="model-drop-item ${isSel ? "on" : ""}" data-model="${esc(m)}">
+      <span>${esc(m)}</span>
+      ${isSel ? `<span class="tag">Selected</span>` : ""}
+    </button>`;
+  }).join("");
+}
+function openModelDrop(filter) {
+  const drop = $("#model_drop");
+  if (!drop || !currentModels.length) return;
+  if (!drop.classList.contains("open")) {
+    renderModelList(filter);
+  }
+  drop.classList.add("open");
+}
+function closeModelDrop() {
+  const drop = $("#model_drop");
+  if (drop) drop.classList.remove("open");
+}
+
 function aiHints() {
   const k = S.ai, sel = $("#ai_provider"); if (!k || !sel) return;
   const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], same = pv.id === k.provider;
@@ -2013,6 +2111,11 @@ function aiHints() {
   $("#ai_model").placeholder = pv.example ? "For example " + pv.example : "The model id, exactly as the service names it";
   $("#ai_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
   $("#ai_basewrap").hidden = pv.id !== "custom" && !(same && k.base_url);
+  if (pv.id === "custom") {      // a router of free models picks the model itself, so none is needed
+    $("#ai_model").placeholder = "Leave empty and the service chooses for itself";
+    $("#ai_modelhint").textContent = "Optional. A service that rotates between free models (for example a free router) chooses by itself when this is empty. Or pick one with Find models.";
+  }
+  $("#ai_waitwrap").hidden = !$("#ai_slow").checked;
 }
 async function drawSettings() {
   const box = $("#sform"); if (!box) return;
@@ -2025,13 +2128,27 @@ async function drawSettings() {
     if (tab === "ai") {
       const k = S.ai = await api("/api/ai");
       body.innerHTML = `<section class="set-sec"><h2>AI</h2><p class="help">PeakCut uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own key from any of these services. You pay that service directly. Without a key, clips are picked by loudness.</p>
-          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.models[0] || "")}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and pick a model.</span>`}</div>
+          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.model || k.models[0] || "")}${k.slow ? " · slow mode" : ""}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and pick a model.</span>`}</div>
           <div class="ai-form">
             <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
             <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
-            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast, inexpensive model is the right choice. Add a second one after a comma to fall back on.</span></label>
+            <label class="f">Model
+              <div class="model-picker" id="model_picker">
+                <span class="with">
+                  <input id="ai_model" value="${esc(k.models.join(", "))}" spellcheck="false" autocomplete="off">
+                  <button class="btn" type="button" data-act="aimodels">Find models</button>
+                </span>
+                <div class="model-drop" id="model_drop">
+                  <div class="model-drop-head"><b>Available models</b><span id="model_drop_count"></span></div>
+                  <div class="model-drop-list" id="model_drop_list"></div>
+                </div>
+              </div>
+              <span class="hint" id="ai_modelhint">A fast, inexpensive model is the right choice. Add a second one after a comma to fall back on.</span>
+            </label>
+            <label class="f" style="flex-direction:row;align-items:center;gap:10px"><input type="checkbox" id="ai_slow" ${k.slow ? "checked" : ""}><span>Go slowly, for free services</span></label>
+            <span class="hint" style="margin-top:-10px">One clip per request, with a rest in between, so a free service does not run out. The number of clips you ask for is the number you get. It is slower: allow a minute or two per clip.</span>
+            <label class="f" id="ai_waitwrap">Rest between requests, in seconds<input id="ai_wait" type="number" min="0" max="600" step="5" value="${esc(k.wait)}"></label>
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>`;
       aiHints();
@@ -2121,9 +2238,27 @@ async function drawSettings() {
           ${card("youtube", "YouTube", yt, "#FF0000", "Post clips to your channel as Shorts.")}
           ${card("instagram", "Instagram", ig, "linear-gradient(45deg,#F58529,#DD2A7B,#8134AF)", "Post clips as Reels. Needs a Creator or Business account.")}
           ${card("tiktok", "TikTok", tt, "#000", "Post clips straight to your TikTok.")}
-        </div></section>`;
+        </div></section>${admin ? await ytCookiesCard(yt) : ""}`;
     }
   } catch (e) { body.innerHTML = `<div class="set-load">${esc(e.message)}</div>`; }
+}
+async function ytCookiesCard(logo) {
+  const st = await api("/api/youtube-cookies").catch(() => null);
+  if (!st) return "";
+  const open = S.setupOpen === "ytdl";
+  const act = `<button class="btn sm ${st.saved ? "ghost" : "primary"}" data-act="appsetup" data-p="ytdl">${ic("cog")}${st.saved ? "Replace" : "Add cookies"}</button>`
+    + (st.saved ? `<button class="btn sm ghost" data-act="ytcookies" data-remove="1">Remove</button>` : "");
+  const panel = open ? `<div class="appsetup">
+      <p class="sub">YouTube refuses many servers with "Sign in to confirm you're not a bot". Cookies from a signed-in YouTube account get past it. Use a spare Google account, not your main one.</p>
+      <ol><li>In a private browser window, sign in to YouTube with that account.</li>
+        <li>With an extension such as <b>Get cookies.txt LOCALLY</b>, export the cookies for youtube.com.</li>
+        <li>Paste the whole file below and save. Then close that private window without signing out.</li></ol>
+      <label class="f">cookies.txt<textarea id="ytc" rows="6" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File"></textarea></label>
+      <div class="row"><button class="btn primary" data-act="ytcookies">Save</button><button class="btn ghost" data-act="appsetup" data-p="">Close</button></div></div>` : "";
+  return `<section class="set-sec"><h2>YouTube links</h2><p class="help">Only needed when YouTube links (videos or lives) fail with "YouTube isn't letting PeakCut download".</p>
+    <div class="apps"><div class="appcard"><span class="applogo" style="background:#FF0000">${logo}</span>
+    <div class="apptx"><b>YouTube cookies</b><span>${st.saved ? `Saved ${new Date(st.updated * 1000).toLocaleString()}. Used for every YouTube link.` : "None saved."}</span></div>
+    <div class="appact">${act}</div>${panel}</div></div></section>`;
 }
 async function saveSettings() { const d = {}; $$("#sform [data-s]").forEach(i => d[i.dataset.s] = i.value); await send("/api/settings", d, "PUT"); }
 
@@ -2146,11 +2281,15 @@ function drawClipDlg(full) {
         <label class="sw"><input type="checkbox" data-f="captions" data-caption-toggle ${c.captions === false ? "" : "checked"}>Generate captions</label>
         <div class="two"><label class="f">Caption style<select data-f="style" data-caption-style ${c.captions === false ? "disabled" : ""}>${opts(S.status.styles, c.style)}</select></label>
           <label class="f">Layout<select data-f="layout">${opts(S.status.layouts, c.layout)}</select></label></div>
+        ${c.status === "done" || c.status === "error" ? `<div class="lay-shot" id="layshot"><img id="layprev" alt="A frame of this clip in the chosen layout" hidden><span class="help" id="laywait">Drawing a preview of this layout…</span></div>` : ""}
         <div class="two"><label class="f">Start (seconds)<input data-f="start" type="number" step="0.5" value="${c.start}"></label>
           <label class="f">End (seconds)<input data-f="end" type="number" step="0.5" value="${c.end}"></label></div>
-        <h3>Post text</h3>
+        <div class="row" style="justify-content:space-between;align-items:center"><h3>Post text</h3>
+          <button class="btn sm" data-act="writetext">Write again with AI</button></div>
         <label class="f">Title<input data-f="title" value="${esc(c.title)}"></label>
         <label class="f">Description<textarea data-f="description" rows="2">${esc(c.description)}</textarea></label>
+        ${j.credit ? `<small class="sub">Added to every post: ${esc(j.credit)}</small>` : ""}
+        <label class="f">Hashtags<input data-f="hashtags" value="${esc((c.hashtags || []).join(" "))}" placeholder="funny gaming clutch"></label>
         <button class="btn" data-act="remake">${ic("scissors")}Save and re-make clip</button>
         <h3>Post it</h3>
         <div id="dposts" class="row" style="gap:4px"></div>
@@ -2164,6 +2303,27 @@ function drawClipDlg(full) {
   } else if (D.sig !== sig) $("#stage").innerHTML = stage;
   D.sig = sig;
   put($("#dposts"), postPills(c));
+  if (full && $("#layprev")) showLayoutPreview(c.layout || "blur");
+}
+let layToken = 0;
+async function showLayoutPreview(layout) {
+  const img = $("#layprev"), wait = $("#laywait");
+  if (!img || !wait || !D.jid || !D.cid) return;
+  const tok = ++layToken;
+  wait.hidden = false; wait.textContent = "Drawing a preview of this layout…";
+  try {
+    const r = await send(`/api/jobs/${D.jid}/clips/${D.cid}/preview`, {layout});
+    if (tok !== layToken) return;
+    img.src = `/media/${D.jid}/${r.preview}?v=${Date.now()}`;
+    img.hidden = false; wait.hidden = true;
+  } catch (e) {
+    if (tok !== layToken) return;
+    img.hidden = true; wait.textContent = e.message || "Could not draw a preview.";
+  }
+}
+function postText() {   // the post text as it is in the clip editor right now
+  const v = k => $(`#clipdlg [data-f="${k}"]`).value;
+  return {title: v("title"), description: v("description"), hashtags: v("hashtags").split(/\s+/).map(h => h.replace(/^#+/, "")).filter(Boolean)};
 }
 $("#clipdlg").addEventListener("close", () => { $("#clipdlg").innerHTML = ""; D.jid = null; });
 $("#clipdlg").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
@@ -2229,13 +2389,22 @@ document.addEventListener("change", async e => {
   if (t.id === "o_creator") {
     const toggle = $("#o_captions"), c = S.creators.find(c => c.id === t.value);
     if (!toggle.dataset.overridden) { toggle.checked = c?.captions !== false; syncCaptionStyle(toggle); }
+    const hk = $("#o_hook"); if (hk && !hk.dataset.typed) hk.value = c?.hook_text || "";      // the creator's own text, unless one was typed here
+    const ds = $("#o_desc"); if (ds && !ds.dataset.typed) ds.value = c?.description_text || "";
     return;
   }
+  if (t.id === "o_hook" || t.id === "o_desc") t.dataset.typed = "1";
+  if (t.dataset.f === "layout" && t.closest("#clipdlg")) return showLayoutPreview(t.value);
   if (t.hasAttribute("data-caption-toggle")) {
     if (t.id === "o_captions") t.dataset.overridden = "true";
     syncCaptionStyle(t);
   }
-  if (t.id === "ai_provider") { $("#ai_models").innerHTML = ""; if (S.ai && t.value !== S.ai.provider) { $("#ai_model").value = ""; $("#ai_base").value = ""; } return aiHints(); }
+  if (t.id === "ai_provider") {
+    currentModels = []; closeModelDrop();
+    if (S.ai && t.value !== S.ai.provider) { $("#ai_model").value = ""; $("#ai_base").value = ""; $("#ai_slow").checked = t.value === "custom"; }
+    return aiHints();
+  }
+  if (t.id === "ai_slow") return aiHints();
   if (t.dataset.sel) {
     const k = t.dataset.sel;
     if (t.checked) sel().add(k); else sel().delete(k);
@@ -2256,7 +2425,31 @@ document.addEventListener("change", async e => {
   saveCreator(true);
 });
 
+document.addEventListener("input", e => {
+  if (e.target.id === "ai_model" && currentModels.length) {
+    openModelDrop(e.target.value);
+  }
+});
+document.addEventListener("focusin", e => {
+  if (e.target.id === "ai_model" && currentModels.length) {
+    openModelDrop(e.target.value);
+  }
+});
+
 document.addEventListener("click", async e => {
+  const mi = e.target.closest("[data-model]");
+  if (mi) {
+    const val = mi.dataset.model;
+    const inp = $("#ai_model");
+    if (inp) {
+      const parts = inp.value.split(",");
+      parts[parts.length - 1] = val;
+      inp.value = parts.join(", ");
+      inp.focus();
+    }
+    closeModelDrop();
+    return;
+  }
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, d = b.dataset;
   if (b.tagName === "A") e.preventDefault();
@@ -2266,16 +2459,21 @@ document.addEventListener("click", async e => {
       b.disabled = true;
       try {
         const r = await send("/api/ai/models", {provider: $("#ai_provider").value, base_url: $("#ai_base").value, key: $("#ai_key").value});
-        $("#ai_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
-        toast(r.models.length ? `${r.models.length} models found. Click the model box to pick one.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
-        if (r.models.length) $("#ai_model").focus();
+        currentModels = r.models || [];
+        if (currentModels.length) {
+          openModelDrop();
+          toast(`${currentModels.length} models found. Choose one below.`, "ok");
+        } else {
+          closeModelDrop();
+          toast("The service listed no models. Type the model yourself.", "");
+        }
       } finally { b.disabled = false; }
       return;
     }
     if (a === "aisave" || a === "aitest") {
       b.disabled = true;
       try {
-        if (a === "aisave") await send("/api/ai", {provider: $("#ai_provider").value, models: $("#ai_model").value, base_url: $("#ai_base").value, key: $("#ai_key").value}, "PUT");
+        if (a === "aisave") await send("/api/ai", {provider: $("#ai_provider").value, models: $("#ai_model").value, base_url: $("#ai_base").value, key: $("#ai_key").value, slow: $("#ai_slow").checked, wait: $("#ai_wait").value}, "PUT");
         let ok = null, why = "";
         try { ok = await send("/api/ai/test"); } catch (err) { why = err.message; }
         S.status = await api("/api/status"); drawShell(); await drawSettings();
@@ -2328,8 +2526,9 @@ document.addEventListener("click", async e => {
       dlg.returnValue = "no"; return dlg.showModal();
     }
     if (a === "copy") {
-      const c = jobOf(d.j).clips.find(x => x.id === d.c);
-      await navigator.clipboard.writeText(`${c.title}\n\n${c.description}\n\n${(c.hashtags || []).map(h => "#" + h).join(" ")}`); return toast("Post text copied", "ok");
+      const j = jobOf(d.j), c = b.closest("#clipdlg") ? postText() : j.clips.find(x => x.id === d.c);   // in the editor: what is in the boxes
+      const tags = c.fixed_description || c.hashtags_in_description ? "" : (c.hashtags || []).map(h => "#" + h).join(" ");   // already in the description
+      await navigator.clipboard.writeText([c.title, c.description, j.credit, tags].filter(Boolean).join("\n\n")); return toast("Post text copied", "ok");
     }
     if (a === "logout") { await api("/api/auth/logout", {method:"POST"}); location.href = "/"; return; }
     if (a === "pwsave") {
@@ -2373,9 +2572,27 @@ document.addEventListener("click", async e => {
       await send("/api/account/delete", {confirm: typed});
       location.href = "/"; return;
     }
+    if (a === "stopjob") { await api(`/api/jobs/${d.j}/stop`, {method:"POST"}); toast("Stopping"); return tick(); }
+    if (a === "retryjob") { await api(`/api/jobs/${d.j}/retry`, {method:"POST"}); toast("Started again"); return tick(); }
     if (a === "deljob") {
       if (!await ask("Delete this video?", "The video and all of its clips are permanently deleted. This cannot be undone.", "Delete", true)) return;
       await api(`/api/jobs/${d.j}`, {method:"DELETE"}); toast("Deleted"); return tick();
+    }
+    if (a === "canceljob") {
+      const j = jobOf(d.j);
+      const title = j?.title || j?.source?.name || "this video";
+      if (!await ask("Cancel processing?", `Stop clipping "${title}" and delete it. Any clips already made will be lost.`, "Cancel & Delete", true)) return;
+      try {
+        await api(`/api/jobs/${d.j}/cancel`, {method:"POST"});
+        toast("Cancelled — deleting…");
+        await new Promise(r => setTimeout(r, 1200));
+        try { await api(`/api/jobs/${d.j}`, {method:"DELETE"}); } catch (_) {}
+        toast("Deleted");
+        return tick();
+      } catch (err) {
+        toast(err.detail || "Could not cancel. Try again in a moment.", "bad");
+      }
+      return;
     }
     if (a === "chadd") {
       const k = d.p, v = $("#chan_" + k)?.value.trim();
@@ -2434,6 +2651,10 @@ document.addEventListener("click", async e => {
     if (a === "storcancel") { await send("/api/storage", {cancel: true}, "PUT"); toast("Kept the current folder", "ok"); return drawSettings(); }
     if (a === "appsetup") { S.setupOpen = d.p && S.setupOpen !== d.p ? d.p : ""; return drawSettings(); }
     if (a === "copytext") { await navigator.clipboard.writeText(d.t); return toast("Copied", "ok"); }
+    if (a === "ytcookies") {
+      await send("/api/youtube-cookies", d.remove ? {remove: true} : {text: $("#ytc").value}, "PUT");
+      S.setupOpen = ""; toast(d.remove ? "YouTube cookies removed." : "Saved. YouTube links will use them now.", "ok"); return drawSettings();
+    }
     if (a === "appsave") {
       await send("/api/apps", {platform: d.p, client_id: $("#app_id").value, client_secret: $("#app_secret").value}, "PUT");
       S.setupOpen = ""; S.status = await api("/api/status"); toast("Saved. People can connect now.", "ok"); return drawSettings();
@@ -2464,10 +2685,20 @@ document.addEventListener("click", async e => {
       });
       await send(`/api/jobs/${D.jid}/clips/${D.cid}/render`, body); toast("Re-making the clip…", "ok"); return tick();
     }
+    if (a === "writetext") {
+      b.disabled = true; const was = b.textContent; b.textContent = "Writing…";
+      try {
+        const t = await send(`/api/jobs/${D.jid}/clips/${D.cid}/write`, {});
+        const f = k => $(`#clipdlg [data-f="${k}"]`);
+        f("title").value = t.title; f("description").value = t.description; f("hashtags").value = (t.hashtags || []).join(" ");
+        return toast("New post text written. Read it over: it is saved when you post.", "ok");
+      } finally { b.disabled = false; b.textContent = was; }
+    }
     if (a === "postnow" || a === "postqueue") {
       const accs = $$("#clipdlg [data-pacc]:checked").map(i => i.value);
       if (!accs.length) return toast("Tick at least one account first.", "bad");
       if (a === "postnow" && !await ask("Post now?", `This clip goes to ${accs.length} account${accs.length > 1 ? "s" : ""} straight away.`, "Post now")) return;
+      await send(`/api/jobs/${D.jid}/clips/${D.cid}/text`, postText(), "PUT");   // the text as it is in the boxes now
       await send("/api/posts", {job:D.jid, clip:D.cid, accounts:accs, now:a === "postnow"});
       toast(a === "postnow" ? "Posting now" : "Added to the queue", "ok"); return tick();
     }

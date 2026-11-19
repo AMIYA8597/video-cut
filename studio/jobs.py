@@ -4,6 +4,7 @@ import json
 import os
 import math
 import queue
+import re
 import shutil
 import threading
 import time
@@ -11,7 +12,12 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import brain, config, creators, ctx, facecam, games, load, media, quality, render, roman, safe, transcribe, usage
+from . import (brain, clean, config, creators, ctx, facecam, games, hashtags, load, media, quality, render, roman, safe,
+               stamps, transcribe, usage)
+
+
+class Stopped(Exception):
+    """The person pressed Stop. Not a failure: the video is kept, and Retry carries on from what was downloaded."""
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -106,9 +112,14 @@ _jobs: dict = {}
 _by_user: dict = {}                       # user -> {job id: job}: listing one person's videos never scans everyone's
 _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
+_cancelled: set = set()    # job ids that have been cancelled: checked by the pipeline to stop early
 
 DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "layout": "blur", "quality": 720,
-            "range_start": None, "range_end": None, "captions": True}
+            "range_start": None, "range_end": None, "captions": True, "hook_text": "", "description_text": "",
+            # moments: exact clips the person chose, written the YouTube way ("1:05:10 - 1:06:09 Funny moment")
+            # replayed: find the moments with YouTube's "Most replayed" graph instead of the transcript alone
+            # clean: star out swear words and slurs in captions, hook, title and post text
+            "moments": [], "replayed": False, "clean": False}
 
 
 LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
@@ -118,11 +129,20 @@ def clean_options(options) -> dict:
     """Only known settings, each inside its allowed range. Raises ValueError on nonsense."""
     out = {}
     for k, v in (options if isinstance(options, dict) else {}).items():
-        if k == "captions":
+        if k in ("captions", "replayed", "clean"):
             if not isinstance(v, bool):
-                raise ValueError("Captions must be on or off.")
+                raise ValueError({"captions": "Captions", "replayed": "Most replayed",
+                                  "clean": "Hide swear words"}[k] + " must be on or off.")
             out[k] = v
             continue
+        if k in ("hook_text", "description_text"):     # kept even when empty: it clears the creator's own text for this video
+            out[k] = creators.clean_hook(v) if k == "hook_text" else creators.clean_description(v)
+            continue
+        if k == "moments":
+            out[k] = stamps.parse_moments(v)          # raises, in words a person can act on
+            continue
+        if k in ("range_start", "range_end") and isinstance(v, str) and v.strip():
+            v = stamps.parse_time(v)                  # "1:05:10" as well as plain seconds
         if k not in DEFAULTS or v in ("", None):
             continue
         if k in LIMITS:
@@ -146,7 +166,7 @@ def job_dir(jid) -> Path:
     return Path(_jobs[jid]["dir"])
 
 
-HIDDEN = ("dir", "user", "source_path", "recover")
+HIDDEN = ("dir", "user", "source_path", "recover", "facecam_checked")
 
 
 def public(job) -> dict:
@@ -156,6 +176,9 @@ def public(job) -> dict:
     out["clips"] = [{k: v for k, v in c.items() if k not in ("src", "fixed_words", "fixed_for")} for c in job["clips"]]
     ai = job.get("ai") or {}
     out["ai"] = {"tokens": ai.get("tokens", 0), "note": ai.get("note", ""), "used": bool(ai.get("model"))}   # never the model, never raw errors
+    from . import posting      # here, not at the top: posting imports this module
+    c = creators.get(job.get("creator")) or dict(creators.DEFAULTS)
+    out["credit"] = posting.credit_line(c, job.get("uploader", ""))   # shown under the post text, added when posted
     if job.get("status") == "queued":
         n = _q.ahead().get(job["id"])
         if n:
@@ -180,7 +203,27 @@ def save(job):
             return
         tmp = d / "job.json.tmp"
         tmp.write_text(text, encoding="utf-8")
-        tmp.replace(d / "job.json")
+        _put_in_place(tmp, d / "job.json")
+
+
+def _put_in_place(tmp: Path, target: Path):
+    """Move the freshly written job.json over the old one.
+
+    Windows refuses this ("Access is denied") for a moment whenever anything else has the old file open: a virus
+    scanner, the search indexer, or another part of PeakCut reading it. A download saves many times a second, so it
+    happens, and it used to stop the whole video. So it is tried again a few times, and if the file is still busy
+    it is written in place; as a last resort this save is skipped, because the next one carries the same news."""
+    for i in range(8):
+        try:
+            tmp.replace(target)
+            return
+        except PermissionError:
+            time.sleep(0.05 * (i + 1))
+    try:
+        target.write_text(tmp.read_text(encoding="utf-8"), encoding="utf-8")
+        tmp.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _set(job, **kw):
@@ -211,6 +254,8 @@ def _load_file(f: Path, uid: str):
         job["source_path"] = _remap(job["source_path"], f.parent)
     if job.get("source", {}).get("path"):
         job["source"]["path"] = _remap(job["source"]["path"], f.parent)
+    if job.pop("stop", None) and job.get("status") in ("queued", "running"):
+        job.update(status="stopped", stage="Stopped", error=None)     # Stop was pressed: a restart doesn't undo it
     if job.get("status") in ("queued", "running") and job.get("kind") != "live":
         # Picked up again as soon as the server is back (jobs.start), from the last finished part of the transcript.
         job.update(status="queued", stage="Picking up where it stopped", error=None, resume=True)
@@ -288,7 +333,9 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     c = creators.get(creator) if creator else None
     if c:
         d = creators.root(c["id"]) / ("live" if kind == "live" else "videos") / jid
-        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout", "captions")}}
+        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout", "captions")},
+                "hook_text": creators.clean_hook(c.get("hook_text")),
+                "description_text": creators.clean_description(c.get("description_text"))}
     else:
         d, base, creator = config.user_dir(ctx.uid()) / "jobs" / jid, dict(DEFAULTS), None
     opts = {**base, **clean_options(options)}
@@ -342,6 +389,61 @@ def delete(jid):
     return bool(job)
 
 
+def cancel(jid) -> bool:
+    """Cancel and delete: the page deletes the video straight after. The pipeline checks is_cancelled() and stops
+    early. Returns True if the job existed and was cancellable, False otherwise."""
+    with _lock:
+        job = _jobs.get(jid)
+        if not job or job["user"] != ctx.uid():
+            return False
+        if job["status"] not in ("queued", "running"):
+            return False
+        _cancelled.add(jid)
+        job["stop"] = True                       # the same signal Stop uses, so every checkpoint sees it
+        job.update(status="error", stage="Cancelled", error="Cancelled by you.")
+    save(job)
+    ctx.bump(job.get("user"))
+    return True
+
+
+def is_cancelled(jid) -> bool:
+    """True if this job has been cancelled or stopped. Checked inside the pipeline to stop early."""
+    job = _jobs.get(jid)
+    return jid in _cancelled or bool(job and job.get("stop"))
+
+
+def stop(jid) -> bool:
+    """The Stop button. A video still waiting in line is stopped straight away; one being worked on stops at the
+    next point it checks (during the download, between parts of the transcript, between clips). Unlike cancel,
+    the video is kept, and Retry carries on from it."""
+    job = _jobs.get(jid)
+    if not job or job.get("kind") == "live" or job["status"] not in ("queued", "running"):
+        return False
+    if job["status"] == "queued":
+        _set(job, status="stopped", stage="Stopped", error=None)
+    else:
+        job["stop"] = True
+        _set(job, stage="Stopping...")
+    return True
+
+
+def retry(jid) -> bool:
+    """Start a stopped or failed video again. Its folder is kept, so a half-finished download carries on from where
+    it was instead of starting from nothing."""
+    job = _jobs.get(jid)
+    if not job or job.get("kind") == "live" or job["status"] not in ("stopped", "error") or jid in _cancelled:
+        return False
+    job.pop("stop", None)
+    _set(job, status="queued", stage="Waiting", error=None, progress=0.0)
+    _q.put(("job", jid, None), user=job["user"])
+    return True
+
+
+def _check_stop(job):
+    if job.get("stop") or job["id"] in _cancelled:
+        raise Stopped()
+
+
 def request_render(jid, cid, changes: dict):
     job = _jobs[jid]
     clip = next(c for c in job["clips"] if c["id"] == cid)
@@ -361,6 +463,8 @@ def request_render(jid, cid, changes: dict):
     for k in ("hook", "title", "description", "style", "layout"):
         if k in changes:
             new[k] = str(changes[k])[:{"hook": 60, "title": 100, "description": 2000}.get(k, 20)]
+    if "hashtags" in changes:
+        new["hashtags"] = clean_hashtags(changes["hashtags"])
     if new.get("style") not in render.STYLES:
         new["style"] = DEFAULTS["style"]
     if new.get("layout") not in render.LAYOUTS:
@@ -368,6 +472,50 @@ def request_render(jid, cid, changes: dict):
     clip.update(new, status="queued")
     save(job)
     _q.put(("clip", jid, cid))
+
+
+def clean_hashtags(v) -> list:
+    """Hashtags typed by a person ("#funny gaming") or sent by the page as a list: plain words, at most 8."""
+    if isinstance(v, str):
+        v = v.split()
+    if not isinstance(v, list):
+        raise ValueError("Hashtags must be words separated by spaces.")
+    tags = [re.sub(r"\W", "", str(h))[:30] for h in v[:50] if isinstance(h, (str, int))]
+    return [t for t in tags if t][:8]
+
+
+def save_post_text(job, clip, changes: dict):
+    """Change a clip's title, description and hashtags without making the clip again. Posting reads them
+    from the clip when it uploads, so the next post (or one still waiting in the queue) uses the new text."""
+    text = {k: str(changes[k] or "")[:{"title": 100, "description": 2000}[k]] for k in ("title", "description") if k in changes}
+    if "hashtags" in changes:
+        text["hashtags"] = clean_hashtags(changes["hashtags"])
+    with _lock:
+        clip.update(text)
+    save(job)
+    side = Path(job["dir"]) / "clips" / f"{clip['id']}.json"   # the copy that sits next to the video file
+    try:
+        if side.is_file():
+            side.write_text(json.dumps({**json.loads(side.read_text(encoding="utf-8")), **text}, indent=1), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
+def spoken_in(job, clip) -> str:
+    """What is said during a clip, from the video's transcript."""
+    try:
+        words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return " ".join(str(w.get("w", "")) for w in words
+                    if isinstance(w, dict) and clip["start"] - 0.5 <= _f(w.get("s")) <= clip["end"] + 0.5)
+
+
+def _f(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return -1.0
 
 
 def render_one(job, clip, words):
@@ -378,11 +526,17 @@ def render_one(job, clip, words):
         if not clip.get("src") and not job.get("source_path"):
             _piece_again(job, clip)
         off = clip.get("src_offset", 0.0)
+        _facecam_for(job, clip)     # a layout changed after the clip was made needs the webcam now
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
+        if job["options"].get("clean"):        # starred out on the post as well as on the picture
+            for k in ("hook", "title", "description"):
+                clip[k] = clean.text(clip.get(k) or "")
         local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
         near = _caption_words(job, clip, words, off) if clip.get("captions", True) else []
+        if job["options"].get("clean"):
+            near = clean.words(near)
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
@@ -400,6 +554,50 @@ def render_one(job, clip, words):
         clip.update(status="error", error=safe.friendly(e, 400))
         creators.log(job["creator"], f"Clip failed: {safe.friendly(e, 200)}")
     save(job)
+
+
+def preview(jid, cid, layout):
+    """A picture of how this clip looks in a layout, made before the clip is, so the choice can be seen.
+
+    Returns the name of the picture inside the job's clips folder. Nothing about the clip itself changes."""
+    job = _jobs[jid]
+    clip = next(c for c in job["clips"] if c["id"] == cid)
+    if layout not in render.LAYOUTS:
+        raise ValueError("That is not a layout PeakCut knows.")
+    if not clip.get("src") and not job.get("source_path"):
+        raise ValueError("The video for this clip is not here any more, so a preview cannot be made.")
+    if not clip.get("src") and job.get("duration") and clip["end"] > job["duration"]:
+        clip = dict(clip, end=job["duration"])      # the same end the re-make would use
+    off = clip.get("src_offset", 0.0)
+    src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
+    local = dict(clip, layout=layout, start=clip["start"] - off, end=clip["end"] - off,
+                 hook=roman.to_roman(clip.get("hook") or ""))
+    # No webcam saved on this clip yet: it is looked for now, so the picture is what a re-make would make.
+    _facecam_for(job, local)
+    words = []
+    if clip.get("captions", True):
+        try:
+            words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            words = []
+    near = _caption_words(job, clip, words, off) if clip.get("captions", True) else []
+    folder = Path(job["dir"]) / "clips"
+    for old in folder.glob(f"{cid}-prev-*.jpg"):
+        old.unlink(missing_ok=True)         # the last preview is never used again
+    name = render.still(src, folder / f"{cid}-prev-{layout}.jpg", local, near,
+                        job.get("width") or 1920, job.get("height") or 1080).name
+    return name
+
+
+def _facecam_for(job, clip):
+    """The webcam this clip needs: none for a layout that does not use one, and found once per video
+    otherwise. A clip made before its layout was changed gets the answer here, without being remade twice."""
+    if clip.get("layout") not in ("gameplay", "fill") or clip.get("facecam"):
+        return clip.get("facecam")
+    face = _facecam(job)
+    if face:
+        clip["facecam"] = face
+    return face
 
 
 def _caption_words(job, clip, words, off):
@@ -489,8 +687,9 @@ def _piece_again(job, clip):
     job.setdefault("height", meta["height"])
 
 
-def _fetch_piece(job, clip, full_audio):
-    """Long videos: download just this clip's stretch and pin down exactly where it starts."""
+def _fetch_piece(job, clip, full_audio, base=0.0):
+    """Long videos: download just this clip's stretch and pin down exactly where it starts. `base` is where in the
+    video the audio we have begins (only part of it was downloaded when a part was chosen)."""
     d = Path(job["dir"])
     o = job["options"]
     try:
@@ -502,7 +701,7 @@ def _fetch_piece(job, clip, full_audio):
         part = media.load_audio(wav)
         wav.unlink(missing_ok=True)
         meta = media.probe(piece)
-        off = media.find_offset(full_audio, part, want)
+        off = media.find_offset(full_audio, part, want - base) + base
         clip.update(src=str(piece), src_offset=round(off, 2), src_end=round(off + meta["duration"], 2))
         clip["start"], clip["end"] = max(clip["start"], clip["src_offset"]), min(clip["end"], clip["src_end"])
         job.setdefault("width", meta["width"])
@@ -533,6 +732,9 @@ def _facecam(job) -> list | None:
     path = job.get("source_path")
     if not path or not Path(path).is_file():
         return None
+    if job.get("facecam_checked"):          # looked at once per video, found or not
+        return job.get("facecam")
+    job["facecam_checked"] = True
     try:
         box = facecam.detect(path, ask=brain.look_for_facecam)
     except Exception:  # noqa: BLE001 - a missing facecam is not a failure
@@ -541,6 +743,170 @@ def _facecam(job) -> list | None:
         return None
     job["facecam"] = [box["x"], box["y"], box["w"], box["h"]]
     return job["facecam"]
+
+
+def _moment_windows(job, meta, notes):
+    """The stretches of the video to make clips from, when the person chose them or asked for YouTube's Most
+    replayed. Each one: {"start", "end", "note", "pick"}; with pick=True the AI chooses the clip inside the stretch,
+    otherwise the stretch is the clip. None means: there is nothing to go on, find the moments the usual way."""
+    o = job["options"]
+    dur = float(meta.get("duration") or 0)
+    out = []
+    if o.get("moments"):
+        for m in o["moments"]:
+            s = float(m["start"])
+            e = float(m["end"]) if m.get("end") is not None else s + float(o["max_len"])
+            if dur and s >= dur:
+                notes.append(f"{stamps.fmt(s)} is past the end of the video ({stamps.fmt(dur)}), so it was left out.")
+                continue
+            if dur:
+                e = min(e, dur)
+            if e - s > 180:
+                notes.append(f"The moment at {stamps.fmt(s)} was cut to 3 minutes, the longest a clip can be.")
+                e = s + 180
+            if e - s < 3:
+                notes.append(f"The moment at {stamps.fmt(s)} is shorter than 3 seconds, so it was left out.")
+                continue
+            out.append({"start": round(s, 2), "end": round(e, 2), "note": m.get("note") or "", "pick": False})
+        if not out:
+            raise RuntimeError("None of the moments could be used. " + " ".join(notes[-3:]))
+        job["notice"] = " ".join(notes[-3:])
+        return out
+    heat = meta.get("heatmap") or []
+    if not heat:
+        job["notice"] = ("YouTube has no Most replayed graph for this video (it only shows one once a video has enough "
+                         "views), so the moments were found the usual way.")
+        return None
+    width = max(3.0 * float(o["max_len"]), 150.0)        # room for the AI to choose the clip inside each peak
+    picks = media.most_replayed(heat, int(o["max_clips"]), width, dur, float(o["range_start"] or 0),
+                                float(o["range_end"]) if o["range_end"] else None)
+    if not picks:
+        job["notice"] = "The Most replayed graph had no peak in the chosen part, so the moments were found the usual way."
+        return None
+    job["notice"] = (f"Clips are taken from the {len(picks)} most replayed part{'s' if len(picks) != 1 else ''} "
+                     "of the video, as YouTube's graph shows them.")
+    return [{"start": a, "end": b, "note": "", "pick": True, "replayed": round(v, 2)} for a, b, v in picks]
+
+
+def _run_moments(job, wins, game, notes, t0):
+    """One clip from each chosen stretch. Only those stretches are downloaded, never the whole video, so a minute
+    of a fifteen-hour stream takes a minute's download."""
+    d = Path(job["dir"])
+    o = job["options"]
+    src = job["source"]
+    url = src.get("url") if src["type"] == "url" else None
+    words_all, tokens, model, face = [], 0, None, False
+    whole = None                                    # an uploaded file's audio, read once for all its moments
+    n = len(wins)
+    for i, w in enumerate(wins):
+        _check_stop(job)
+        s, e = w["start"], w["end"]
+        label = f"moment {i + 1} of {n}" if n > 1 else "the moment"
+        _set(job, stage=f"Getting {label} ({stamps.fmt(s)} to {stamps.fmt(e)})", progress=0.03 + 0.9 * i / n)
+        piece = None
+        if url:
+            pad = 0.0 if w["pick"] else 2.0           # a little either side, so the clip can be re-trimmed later
+            want = max(0.0, s - pad)
+            until = e + pad if not job.get("duration") else min(job["duration"], e + pad)
+            try:
+                piece = media.download_section(url, d / "clips", f"m{i + 1:02d}.src", want, until,
+                                               int(o["quality"]), exact=True)
+            except Exception as ex:  # noqa: BLE001
+                _check_stop(job)
+                notes.append(f"Couldn't download {stamps.fmt(s)} to {stamps.fmt(e)}: {safe.friendly(ex, 160)}")
+                continue
+            pm = media.probe(piece)
+            job.setdefault("width", pm["width"])
+            job.setdefault("height", pm["height"])
+            wav = d / "clips" / f"m{i + 1:02d}.wav"
+            media.extract_audio(piece, wav)
+            aud, at = media.load_audio(wav), want
+            wav.unlink(missing_ok=True)
+        else:
+            if whole is None:
+                wav = d / "audio.wav"
+                media.extract_audio(Path(job["source_path"]), wav)
+                whole = media.load_audio(wav)
+                wav.unlink(missing_ok=True)
+            aud, at = whole[int(s * 16000): int(e * 16000)], s
+        _check_stop(job)
+        _set(job, stage=f"Writing the transcript for {label}")
+        heard = [dict(x, s=round(x["s"] + at, 2), e=round(x["e"] + at, 2)) for x in transcribe.transcribe(aud)]
+        words_all += heard
+        inside = [x for x in heard if s - 0.5 <= x["s"] <= e]
+        _set(job, stage=f"Choosing the clip in {label}" if w["pick"] else f"Writing the hook for {label}")
+        clip = None
+        if w["pick"]:
+            # The AI picks the best stretch inside this most-replayed part, the way it does for a whole video.
+            rel = [dict(x, s=round(x["s"] - s, 2), e=round(x["e"] - s, 2)) for x in inside]
+            db = media.loudness_per_second(aud[int((s - at) * 16000): int((e - at) * 16000)])
+            try:
+                found, ai = brain.find_clips(rel, db, e - s, job["title"], job["uploader"], 1, int(o["min_len"]),
+                                             int(o["max_len"]), notes.append, game=game)
+                tokens += ai.get("tokens", 0)
+                model = ai.get("model") or model
+            except Exception as ex:  # noqa: BLE001 - the replayed part is still worth a clip without the AI
+                notes.append(f"The AI could not choose inside {label}: {safe.friendly(ex, 120)}")
+                found = []
+            if found:
+                clip = dict(found[0], start=round(found[0]["start"] + s, 2), end=round(found[0]["end"] + s, 2))
+            else:
+                # Nothing said worth clipping (a game with no commentary): the middle of what people rewatched.
+                mid = (s + e) / 2
+                half = float(o["max_len"]) / 2
+                clip = {"start": round(max(s, mid - half), 2), "end": round(min(e, mid + half), 2)}
+            clip["reason"] = f"Most replayed on YouTube ({round(w['replayed'] * 100)}% of the peak)."
+        else:
+            clip = {"start": s, "end": e}
+        if not clip.get("hook"):
+            text = " ".join(x["w"] for x in heard if clip["start"] - 0.5 <= x["s"] <= clip["end"])
+            # With nothing said and no note, the AI would not be asked at all and the clip would go out with no
+            # hook. A most-replayed part always has something to say about it: people kept watching it again.
+            note = w.get("note") or ("The part of the video viewers rewatched the most, as YouTube's Most replayed "
+                                     "graph shows. Little or nothing is said in it." if w["pick"] else "")
+            about = brain.describe(text, job["title"], job["uploader"], game=game, note=note)
+            clip = {**about, **{k: v for k, v in clip.items() if k in ("start", "end", "reason")}}
+            if not clip.get("title") and w.get("note"):
+                clip["title"] = w["note"][:100]
+            if w["pick"] and not clip.get("hook"):
+                # The AI had no words to go on. Say plainly why this moment was chosen.
+                clip["hook"] = "MOST REPLAYED"
+                clip["title"] = clip.get("title") or f"The most replayed moment of {job['title'] or 'this video'}"[:100]
+        clip.update(id=f"clip{len(job['clips']) + 1:02d}", style=o["style"], layout=o["layout"],
+                    captions=o.get("captions", True), status="queued", version=0, chosen=bool(not w["pick"]))
+        if piece:
+            clip.update(src=str(piece), src_offset=round(at, 2), src_end=round(at + pm["duration"], 2))
+            clip["start"], clip["end"] = max(clip["start"], clip["src_offset"]), min(clip["end"], clip["src_end"])
+        if o["layout"] == "gameplay" and face is False:
+            try:
+                box = facecam.detect(str(piece) if piece else job["source_path"], ask=brain.look_for_facecam)
+                face = [box["x"], box["y"], box["w"], box["h"]] if box and box.get("conf") == "high" else None
+            except Exception:  # noqa: BLE001
+                face = None
+        if face:
+            clip["facecam"] = face
+        job["clips"].append(clip)
+        save(job)
+        _check_stop(job)
+        render_one(job, clip, words_all)
+        save(job)
+    words_all.sort(key=lambda x: x["s"])
+    (d / "words.json").write_text(json.dumps(words_all), encoding="utf-8")
+    clips = [c for c in job["clips"] if c.get("status") == "done"]
+    if notes:
+        job["notice"] = " ".join(x for x in [job.get("notice", "")] + [x for x in notes if x.startswith(("Couldn't", "The AI could not"))][-2:] if x)
+    job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:], "note": ""}
+    stage = "Done" if clips else "Done, but no clip could be made"
+    _set(job, status="done", stage=stage, progress=1.0, took=round(time.time() - t0))
+    try:
+        from . import notices
+        name = job.get("title") or src.get("name") or "your video"
+        notices.add(job.get("user"), "clips", f"{len(clips)} clip{'s' if len(clips) != 1 else ''} ready" if clips
+                    else "No clip could be made", name,
+                    f"/app/creators/{job['creator']}" if job.get("creator") else "/app/videos")
+    except Exception:  # noqa: BLE001
+        pass
+    creators.log(job["creator"], f"Video finished with {len(clips)} clips in {round(time.time() - t0)}s: {job['title']}")
 
 
 def _run_job(job):
@@ -564,19 +930,23 @@ def _run_job(job):
     t0 = time.time()
     notes = []
     face = False       # where the webcam is in the source, found once; False means not looked for yet
+    job.pop("stop", None)
     usage.set_context(job["creator"], job["title"] or src.get("name"))
+    if o.get("moments") or o.get("replayed"):
+        job.pop("resume", None)                   # each moment is quick: after a restart they are simply made again
     resuming = bool(job.pop("resume", False)) and (d / "words.json").is_file()
     if resuming:   # after a restart: keep the transcript parts, clips and AI answers already made, and carry on
         _set(job, status="running", stage="Picking up where it stopped", error=None)
     else:
         _set(job, status="running", stage="Getting the audio", progress=0.03, error=None, clips=[], ai={}, done_blocks=0)
-    if not transcribe.model_ready() and not transcribe.REMOTE:
+    if not transcribe.model_ready() and (config.ASR_BACKEND == "whisper" or not transcribe.REMOTE):
         from . import fetch_model
-        _set(job, stage="Getting the speech model (one time, about 480 MB)")
+        _set(job, stage="Getting the speech model (one time)")
         fetch_model.ensure()
         _set(job, stage="Getting the audio")
     fetch = ThreadPoolExecutor(1)
     video = None
+    base = 0.0         # where in the video the audio we hold begins: only a part is downloaded when a part is chosen
     if src["type"] == "url":
         meta = media.info(src["url"])
         if meta["kind"] != "video":
@@ -590,11 +960,33 @@ def _run_job(job):
         if not job.get("thumb") and media.save_thumb(d, url=src["url"]):
             _set(job, thumb=True)
         usage.set_context(job["creator"], meta["title"])
-        span = (o["range_end"] or meta["duration"]) - (o["range_start"] or 0)
-        pieces = span > LONG_VIDEO or meta["duration"] <= 0
+        if not job.get("game"):
+            game = games.detect(meta["title"], src.get("name"))[0] or game
+            if game:
+                job["game"] = game
+        if o.get("moments") or o.get("replayed"):
+            wins = _moment_windows(job, meta, notes)
+            if wins is not None:
+                return _run_moments(job, wins, game, notes, t0)
+        # The whole video is only downloaded when the whole video is short. A short part of a long video is fetched
+        # in pieces, around the clips, like a long video: downloading fifteen hours to use two is never quicker.
+        pieces = meta["duration"] > LONG_VIDEO or meta["duration"] <= 0
         if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
             video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
-        audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
+        ranged = meta["duration"] > 0 and bool(o["range_start"] or (o["range_end"] and o["range_end"] < meta["duration"]))
+        if ranged:
+            base = float(o["range_start"] or 0)
+            _set(job, stage=f"Getting the audio ({stamps.fmt(base)} to {stamps.fmt(o['range_end'] or meta['duration'])})")
+        seen = [-1.0]
+
+        def got(p):                       # the bar moves in whole percents: no need to save the file a hundred times a second
+            if p - seen[0] >= 0.01 or p >= 1:
+                seen[0] = p
+                _set(job, progress=0.03 + 0.1 * p)
+
+        audio_file = media.download_audio(src["url"], d, got,
+                                          start=base if ranged else None, end=o["range_end"] if ranged else None,
+                                          check=lambda: _check_stop(job))
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
@@ -603,16 +995,26 @@ def _run_job(job):
         _set(job, source_path=str(audio_file), width=info["width"], height=info["height"], duration=info["duration"])
         if not job.get("thumb") and media.save_thumb(d, video=audio_file):
             _set(job, thumb=True)
+        if o.get("moments"):
+            wins = _moment_windows(job, {"duration": info["duration"], "heatmap": []}, notes)
+            if wins is not None:
+                return _run_moments(job, wins, game, notes, t0)
+        elif o.get("replayed"):
+            notes.append("Most replayed only works with a YouTube link, so the moments were found the usual way.")
+    _check_stop(job)
     wav = d / "audio.wav"
     media.extract_audio(audio_file, wav)
     audio = media.load_audio(wav)
     wav.unlink(missing_ok=True)
     if src["type"] == "url":
         audio_file.unlink(missing_ok=True)
+    if is_cancelled(job["id"]):
+        return
     if not job["duration"]:
-        job["duration"] = len(audio) / 16000
-    lo = int((o["range_start"] or 0) * 16000)
-    hi = min(len(audio), int(o["range_end"] * 16000)) if o["range_end"] else len(audio)
+        job["duration"] = base + len(audio) / 16000
+    # lo and hi are places in the audio we hold; add `base` to get a time in the video
+    lo = max(0, int(((o["range_start"] or 0) - base) * 16000))
+    hi = min(len(audio), int((o["range_end"] - base) * 16000)) if o["range_end"] else len(audio)
     span = (hi - lo) / 16000
     db = media.loudness_per_second(audio[lo:hi])
 
@@ -642,19 +1044,22 @@ def _run_job(job):
     began = {}      # clip id -> when work on it started
 
     def make(clip, words_now):
+        _check_stop(job)
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
-            _fetch_piece(job, clip, audio)
+            _fetch_piece(job, clip, audio, base)
         if clip["status"] != "error" and clip.get("captions", True) and yt and yt[1].lower().startswith("en"):
             # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
-            a0, b0 = max(lo, int((clip["start"] - 1.5) * 16000)), min(hi, int((clip["end"] + 1.5) * 16000))
+            a0 = max(lo, int((clip["start"] - 1.5 - base) * 16000))
+            b0 = min(hi, int((clip["end"] + 1.5 - base) * 16000))
+            at = a0 / 16000 + base
             try:
-                tw = [dict(w, s=round(w["s"] + a0 / 16000, 2), e=round(w["e"] + a0 / 16000, 2)) for w in transcribe.transcribe(audio[a0:b0])]
+                tw = [dict(w, s=round(w["s"] + at, 2), e=round(w["e"] + at, 2)) for w in transcribe.transcribe(audio[a0:b0])]
             except Exception:  # noqa: BLE001 - the clip is still made, with YouTube's words
                 tw = []
             if len(tw) >= 3:
-                exact[clip["id"]] = (a0 / 16000, b0 / 16000, tw)
+                exact[clip["id"]] = (at, b0 / 16000 + base, tw)
                 words_now = tw
         if clip["status"] != "error":
             render_one(job, clip, words_now)
@@ -672,7 +1077,7 @@ def _run_job(job):
             yt = media.youtube_words(src["url"])
         except Exception:  # noqa: BLE001 - no transcript to borrow: ours is written as usual
             yt = None
-        if yt and not _covers(yt[0], lo / 16000, hi / 16000):
+        if yt and not _covers(yt[0], lo / 16000 + base, hi / 16000 + base):
             yt = None
         job["transcript_from"] = "youtube" if yt else "own"
         job["lang"] = yt[1] if yt else ""          # the language spoken, when YouTube says (decides the captions)
@@ -684,7 +1089,7 @@ def _run_job(job):
         done_blocks = min(int(job.get("done_blocks", 0)), len(blocks)) if words else 0
         tokens, model = int((job.get("ai") or {}).get("tokens", 0)), (job.get("ai") or {}).get("model")
         if done_blocks < len(blocks):     # words past the last finished part are transcribed again
-            cut = blocks[done_blocks][0] / 16000
+            cut = blocks[done_blocks][0] / 16000 + base
             words = [w for w in words if w["s"] < cut]
         for c in job["clips"]:            # clips found before the restart that were not finished yet
             if c.get("status") not in ("done", "error"):
@@ -702,6 +1107,7 @@ def _run_job(job):
             last = [0.0]
 
             def tp(p, i=i, a_=a_, b_=b_):
+                _check_stop(job)
                 if now_on[0] == i and p - last[0] > 0.05:      # only the part being shown moves the bar
                     last[0] = p
                     _set(job, progress=max(job["progress"], 0.14 + 0.78 * ((a_ - lo) + p * (b_ - a_)) / max(1, hi - lo)))
@@ -713,11 +1119,14 @@ def _run_job(job):
     for bi, (a, b) in enumerate(blocks):
         if bi < done_blocks:
             continue                      # transcribed and checked by the AI before the restart
-        shift = a / 16000
+        if is_cancelled(job["id"]):
+            break
+        shift = a / 16000 + base          # where this block starts, as a time in the video
         where = f" (minute {round((a - lo) / 16000 / 60)} of {round(span / 60)})" if len(blocks) > 1 else ""
         if yt:
             _set(job, stage="Reading the transcript" + where)
-            bw = [dict(w, s=round(w["s"] - shift, 2), e=round(w["e"] - shift, 2)) for w in yt[0] if a / 16000 <= w["s"] < b / 16000]
+            bw = [dict(w, s=round(w["s"] - shift, 2), e=round(w["e"] - shift, 2)) for w in yt[0]
+                  if shift <= w["s"] < b / 16000 + base]
         else:
             _set(job, stage="Writing the transcript" + where)
             now_on[0] = bi
@@ -736,7 +1145,11 @@ def _run_job(job):
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
-                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, game=game)
+                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, game=game,
+                                     stop=lambda: is_cancelled(job["id"]),
+                                     status=lambda s, where=where: _set(job, stage=f"{s}{where}"))
+        if is_cancelled(job["id"]):       # cancelled while the AI was being waited on: nothing more is started
+            break
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):
@@ -757,9 +1170,15 @@ def _run_job(job):
             c.update(id=f"clip{len(job['clips']) + 1:02d}", start=round(c["start"] + shift, 2),
                      end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"],
                      captions=o.get("captions", True), status="queued", version=0)
-            # Only the gameplay layout uses a webcam, so it is only looked for then, and only once: a
-            # stream with no webcam is not looked for again on every clip of it.
-            if o["layout"] == "gameplay" and face is False:
+            if o.get("hook_text"):        # the person's own big text, on every clip, in place of the AI's
+                c["hook"] = o["hook_text"]
+            if o.get("description_text"):  # ...and their own description, exactly as written
+                c["description"], c["fixed_description"] = o["description_text"], True
+            else:                          # no description of their own: 3 to 5 fitting hashtags go at the end of the AI's
+                hashtags.apply(c, words, job["title"], job["uploader"], game)
+            # Only the layouts with a webcam in them use one, so it is only looked for then, and only once:
+            # a stream with no webcam is not looked for again on every clip of it.
+            if o["layout"] in ("gameplay", "fill") and face is False:
                 face = _facecam(job)
             if face:
                 c["facecam"] = face
@@ -768,6 +1187,8 @@ def _run_job(job):
         job["ai"] = {"model": model, "tokens": tokens, "note": "", "log": notes[-5:]}
         job["done_blocks"] = bi + 1       # a restart from here on carries on with the next part
         save(job)
+    if is_cancelled(job["id"]):
+        return
     if futures:
         _set(job, stage="Finishing the clips", progress=max(job["progress"], 0.92))
     _wait_for_clips(job, futures, began, renders._max_workers)
@@ -805,7 +1226,7 @@ def _worker(quick_only=False):
                 traceback.print_exc()
             continue
         job = _jobs.get(a)
-        if not job:
+        if not job or (kind == "job" and job.get("status") != "queued"):   # gone, or stopped while it waited
             if kind == "job":
                 _q.done()
             continue
@@ -819,6 +1240,13 @@ def _worker(quick_only=False):
                 if clip.get("captions", True):
                     words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 render_one(job, clip, words)
+        except Stopped:
+            job.pop("stop", None)
+            for c in job["clips"]:
+                if c.get("status") in ("queued", "rendering"):
+                    c.update(status="error", error="Stopped before this clip was made.")
+            _set(job, status="stopped", stage="Stopped", error=None)
+            creators.log(job["creator"], f"Video stopped: {job.get('title') or ''}")
         except Exception as e:  # noqa: BLE001
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":

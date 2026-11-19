@@ -19,7 +19,14 @@ BASE = f"http://127.0.0.1:{PORT}"
 
 
 def main() -> int:
-    data = Path(tempfile.mkdtemp(prefix="peakcut-test-"))
+    # A Windows console cannot show every character the tests print, and one it cannot show used to stop the whole
+    # run halfway. Anything it cannot show is now printed as "?" instead.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    data =Path(tempfile.mkdtemp(prefix="peakcut-test-"))
     env = {**os.environ, "PEAKCUT_DATA": str(data), "PEAKCUT_PORT": str(PORT), "PEAKCUT_PUBLIC_URL": BASE,
            "PEAKCUT_HOST": "127.0.0.1", "PEAKCUT_AUTO_RELOAD": "0", "DATABASE_URL": "",
            "PEAKCUT_ACCOUNTS": "1", "PEAKCUT_FETCH_MODEL": "0", "PEAKCUT_UPDATE_CHECK": "0",                   # these tests are about people signing in; tests/test_local.py covers the default
@@ -48,24 +55,37 @@ def main() -> int:
         runs = [("permissions", ["tests/test_permissions.py", BASE, str(ROOT), sys.executable]),
                 ("abuse and limits", ["tests/test_abuse.py", BASE, str(ROOT)]),
                 ("queue under load", ["tests/test_load_queue.py", str(ROOT)]),
+                ("a day-long video in little memory", ["tests/test_longvideo.py"]),
                 ("deleting and bulk actions", ["tests/test_delete.py"]),
+                ("saving a video when Windows says busy", ["tests/test_jobsave.py"]),
+                ("your own big text on the clips", ["tests/test_bigtext.py"]),
+                ("hashtags made without an AI", ["tests/test_hashtags.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
                 ("AI services", ["tests/test_ai.py"]),
+                ("going slowly, for free AI services", ["tests/test_slow.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("turning captions off and back on", ["tests/test_captions.py"]),
+                ("Hindi-English mixed speech", ["tests/test_whisper.py"]),
                 ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"]),
+                ("every post credits the streamer", ["tests/test_credit.py"]),
                 ("the new-version notice", ["tests/test_updates.py"]),
                 ("no limits by default", ["tests/test_limits.py"]),
                 ("captions never overlap, stuck clips, sentence endings", ["tests/test_stuck.py"]),
                 ("ad breaks and frozen screens", ["tests/test_static.py"]),
                 ("answers that are not quite right", ["tests/test_answer.py"]),
                 ("knowing which game a stream is", ["tests/test_games.py"]),
+                ("YouTube-style times, Most replayed, Stop and Retry, hidden swear words", ["tests/test_moments.py"]),
                 ("finding the facecam in a gaming stream", ["tests/test_facecam.py"]),
+                ("a small facecam in a busy game, wherever it is", ["tests/test_facecam_positions.py"]),
+                ("recording time: the buffer knows where each piece sits", ["tests/test_live_times.py"]),
+                ("the gameplay layout: bands, fill, previews", ["tests/test_layout.py"]),
                 ("fresh installs: ffmpeg, the speech model, AI errors", ["tests/test_tools.py"]),
                 ("the storage folder: full drive, open, move", ["tests/test_storage.py"]),
                 ("security: visitor address, email addresses, Google sign-in, prompts", ["tests/test_hardening.py"]),
-                ("long logs, the machine monitor, failed recordings, admin day totals", ["tests/test_robustness.py"])]
+                ("long logs, the machine monitor, failed recordings, admin day totals", ["tests/test_robustness.py"]),
+                ("live recording stops and empty stream URLs", ["tests/test_live.py"]),
+                ("post text: write again with AI, edit, post without re-making", ["tests/test_post_text.py"])]
         for name, args in runs:
             print(f"\n=== {name} ===", flush=True)
             r = subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")

@@ -7,8 +7,9 @@ import shutil
 import tarfile
 import threading
 import urllib.request
+from pathlib import Path
 
-from . import config
+from . import config, safe
 
 URL = f"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{config.ASR_MODEL_NAME}.tar.bz2"
 _lock = threading.Lock()
@@ -16,16 +17,34 @@ state = {"doing": False, "percent": 0, "error": ""}
 
 
 def ready() -> bool:
-    """Is the whole model there: the word list and all three parts?"""
+    """Is the selected model present, including its weights and word lists?"""
+    if config.ASR_BACKEND == "whisper":
+        try:
+            from faster_whisper.utils import download_model
+            d = Path(download_model(config.WHISPER_MODEL, cache_dir=str(config.MODELS_DIR / "whisper"), local_files_only=True))
+            return all((d / name).is_file() and (d / name).stat().st_size > 0
+                       for name in ("model.bin", "config.json", "tokenizer.json")) and any(
+                           (d / name).is_file() and (d / name).stat().st_size > 0
+                           for name in ("vocabulary.json", "vocabulary.txt"))
+        except (OSError, ValueError, ImportError):
+            return False
     d = config.ASR_MODEL_DIR
     if not (d / "tokens.txt").is_file():
         return False
     return all(any(d.glob(f"{part}*.onnx")) for part in ("encoder", "decoder", "joiner"))
 
 
-def _progress(blocks, size, total):
-    if total > 0:
-        state["percent"] = min(99, int(blocks * size * 100 / total))
+WAIT = 60   # seconds of silence from the connection before giving up, so a stalled download cannot hang everything
+
+def _download(dest):
+    """Save the archive to dest, giving up if the connection goes quiet for WAIT seconds."""
+    with urllib.request.urlopen(URL, timeout=WAIT) as r, open(dest, "wb") as f:
+        total, got = int(r.headers.get("Content-Length") or 0), 0
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+            got += len(chunk)
+            if total > 0:
+                state["percent"] = min(99, got * 100 // total)
 
 
 def ensure() -> None:
@@ -37,11 +56,31 @@ def ensure() -> None:
         if ready():
             return
         state.update(doing=True, percent=0, error="")
+        if config.ASR_BACKEND == "whisper":
+            try:
+                from faster_whisper.utils import download_model
+            except ImportError as e:
+                from . import whisper
+                state["error"] = whisper.HELP
+                raise RuntimeError(whisper.HELP) from e
+            try:
+                print("Downloading the multilingual speech model (one time)...", flush=True)
+                download_model(config.WHISPER_MODEL, cache_dir=str(config.MODELS_DIR / "whisper"))
+                if not ready():
+                    raise OSError("The downloaded speech model is incomplete.")
+                state["percent"] = 100
+            except Exception as e:
+                state["error"] = str(e)[-200:]
+                raise RuntimeError("PeakCut couldn't download its multilingual speech model. Check the internet "
+                                   "connection and free disk space, then try again.") from e
+            finally:
+                state["doing"] = False
+            return
         print("\n  Downloading the speech model (one time, about 480 MB)...\n", flush=True)
         config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
         tmp, part = config.MODELS_DIR / "speech-model.tar.bz2", config.MODELS_DIR / "speech-model.unpacking"
         try:
-            urllib.request.urlretrieve(URL, tmp, _progress)
+            _download(tmp)
             shutil.rmtree(part, ignore_errors=True)
             part.mkdir()
             with tarfile.open(tmp, "r:bz2") as t:
@@ -55,9 +94,10 @@ def ensure() -> None:
             got.rename(config.ASR_MODEL_DIR)
             print("  Speech model ready.\n", flush=True)
         except Exception as e:  # noqa: BLE001
-            state["error"] = str(e)[-200:]
+            state["error"] = safe.friendly(e, 200)
             raise RuntimeError("PeakCut couldn't download its speech model (about 480 MB, needed once). Check the "
-                               "internet connection and free disk space, then try again.") from e
+                               "internet connection and free disk space, then try again, or run "
+                               f"python -m studio.fetch_model to see what goes wrong. What it reported: {state['error']}") from e
         finally:
             state["doing"] = False
             tmp.unlink(missing_ok=True)

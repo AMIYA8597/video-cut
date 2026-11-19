@@ -37,15 +37,20 @@ def current() -> str:
         if not head.startswith("ref:"):
             return head if re.fullmatch(r"[0-9a-f]{40}", head) else ""
         ref = head.split(":", 1)[1].strip()
-        f = g / ref
-        if f.is_file():
-            return f.read_text(encoding="utf-8").strip()
-        packed = g / "packed-refs"
-        if packed.is_file():
-            for line in packed.read_text(encoding="utf-8").splitlines():
-                parts = line.split()
-                if len(parts) == 2 and parts[1] == ref:
-                    return parts[0]
+        # A worktree has its own HEAD, but its branches live in the main repository's folder, named in "commondir".
+        places = [g]
+        if (g / "commondir").is_file():
+            places.append((g / (g / "commondir").read_text(encoding="utf-8").strip()).resolve())
+        for place in places:
+            f = place / ref
+            if f.is_file():
+                return f.read_text(encoding="utf-8").strip()
+            packed = place / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == ref:
+                        return parts[0]
     except (OSError, IndexError):
         pass
     return ""

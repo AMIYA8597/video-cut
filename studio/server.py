@@ -2,14 +2,17 @@
 
 Public pages:  /  /login  /signup          The app:  /app  (signed-in users only)
 Everything under /api, /media and /oauth needs a session, except /api/auth/* and /api/public."""
+import contextlib
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
 import shutil
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -21,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import admin as admins
 from . import account, load
-from . import (accounts, ai, alerts, auth, config, creators, ctx, db, jobs, live, media, posting,
+from . import (accounts, ai, alerts, auth, brain, config, creators, ctx, db, jobs, live, media, posting,
                profiles, render, safe, transcribe, usage)
 
 from . import tools as _tools  # noqa: E402
@@ -34,7 +37,6 @@ def _quiet(fn):
         print(f"  {e}", flush=True)
 
 
-app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
 OPEN = ("/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
@@ -49,13 +51,6 @@ CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 
 BOOT = f"{int(time.time()) % 100000:x}"     # part of every sync token, so pages reload their data after a restart
 
 
-@app.on_event("startup")
-async def _more_threads():
-    import anyio.to_thread
-    anyio.to_thread.current_default_thread_limiter().total_tokens = int(config.env("PEAKCUT_REQUEST_THREADS", "64"))
-
-
-@app.on_event("startup")
 def _startup():
     db.init()
     for f in (config.TMP_DIR / "uploads").glob("*"):      # uploads cut short by a restart
@@ -66,6 +61,10 @@ def _startup():
     render.install_fonts()
     if _tools.missing():
         print("\n  " + _tools.HELP + "\n", flush=True)
+    if config.ASR_BACKEND == "whisper":
+        from . import whisper
+        if not whisper.installed():
+            print("\n  " + whisper.HELP + "\n", flush=True)
     if not transcribe.REMOTE and config.env("PEAKCUT_FETCH_MODEL", "1") != "0":     # the speech model: fetched now, in the background, if it was never downloaded
         from . import fetch_model
         threading.Thread(target=lambda: _quiet(fetch_model.ensure), daemon=True).start()
@@ -74,6 +73,17 @@ def _startup():
     posting.start()
     from . import updates
     updates.start()                  # looks for a newer PeakCut every minute, in the background
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import anyio.to_thread
+    anyio.to_thread.current_default_thread_limiter().total_tokens = int(config.env("PEAKCUT_REQUEST_THREADS", "64"))
+    _startup()
+    yield
+
+
+app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 # ================================================================ the gate: who is asking, and are they allowed
@@ -248,6 +258,35 @@ def _from_cdn(addr: str) -> bool:
     return any(ip in n for n in _CDN_RANGES)
 
 
+# Private and local addresses: the only places a reverse proxy in front of PeakCut can sit.
+_PROXY_CIDRS = ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16",
+                "::1/128", "fc00::/7", "fe80::/10")
+_PROXY_RANGES = [ipaddress.ip_network(r) for r in _PROXY_CIDRS]
+
+
+def _trust_proxy() -> bool:
+    return (config.env("PEAKCUT_TRUST_PROXY") or "").strip().lower() not in ("", "0", "false", "no")
+
+
+def _valid_ip(text: str) -> str:
+    """The address as text if it really is an IP address, otherwise ""."""
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        return ""
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return str(ip)
+
+
+def _from_proxy(addr: str) -> bool:
+    clean = _valid_ip(addr)
+    if not clean:
+        return False
+    ip = ipaddress.ip_address(clean)
+    return any(ip in n for n in _PROXY_RANGES)
+
+
 def _ip(request: Request) -> str:
     """The visitor's address, used for rate limits. The connection's own address, or the one the proxy in front
     reports (PEAKCUT_TRUST_PROXY). If that connection comes from the CDN, the CDN's header names the real visitor
@@ -255,12 +294,15 @@ def _ip(request: Request) -> str:
     pick their own address by sending it themselves.
 
     The proxy adds the address it saw at the END of X-Forwarded-For. Everything before that was written by the
-    visitor, so only the last entry is believed."""
-    fwd = request.headers.get("x-forwarded-for", "")
-    peer = (fwd.split(",")[-1].strip() if fwd and config.env("PEAKCUT_TRUST_PROXY") else "") or (request.client.host if request.client else "")
+    visitor, so only the last entry is believed, and only when the connection came from a proxy on a private address."""
+    direct = request.client.host if request.client else ""
+    peer = direct
+    fwd = ",".join(request.headers.getlist("x-forwarded-for"))
+    if _trust_proxy() and fwd and _from_proxy(direct):
+        peer = _valid_ip(fwd.rsplit(",", 1)[-1].strip()) or direct
     named = config.env("PEAKCUT_CLIENT_IP_HEADER")
     if named and request.headers.get(named) and _from_cdn(peer):
-        return request.headers[named].split(",")[0].strip()[:64]
+        return _valid_ip(request.headers[named].split(",")[0].strip()[:64]) or peer
     return peer
 
 
@@ -592,6 +634,10 @@ def _job_slots():
     from . import tools
     if tools.missing():
         raise HTTPException(503, tools.HELP)
+    if config.ASR_BACKEND == "whisper":
+        from . import whisper
+        if not whisper.installed():
+            raise HTTPException(503, whisper.HELP)
     if jobs.busy_count() >= config.MAX_ACTIVE_JOBS_PER_USER:
         raise HTTPException(429, f"You already have {config.MAX_ACTIVE_JOBS_PER_USER} videos in progress. Wait for one to finish.")
 
@@ -766,7 +812,9 @@ def create_from_file(file: UploadFile = File(...), options: str = Form("{}"), cr
             with _create_lock:
                 _job_slots()
                 job = jobs.create({"type": "file", "path": str(tmp), "name": name}, opts, enqueue=False, creator=creator or None)
-        except (ValueError, TypeError):
+        except ValueError as e:
+            raise HTTPException(400, str(e) or "Those options aren't valid.")
+        except TypeError:
             raise HTTPException(400, "Those options aren't valid.")
         _disk.pop(ctx.uid(), None)
         dest = jobs.job_dir(job["id"]) / ("source" + ext)
@@ -838,7 +886,9 @@ def upload_start(body: dict = Body(...)):
     opts = body.get("options") if isinstance(body.get("options"), dict) else {}
     try:
         jobs.clean_options(opts)                 # refused now rather than after the whole file has been sent
-    except (ValueError, TypeError):
+    except ValueError as e:
+        raise HTTPException(400, str(e) or "Those options aren't valid.")
+    except TypeError:
         raise HTTPException(400, "Those options aren't valid.")
     _up_sweep()
     mine = 0
@@ -902,7 +952,9 @@ def upload_finish(upid: str):
                 _job_slots()
                 job = jobs.create({"type": "file", "path": "", "name": meta["name"]}, meta["options"], enqueue=False,
                                   creator=meta["creator"] or None)
-        except (ValueError, TypeError):
+        except ValueError as e:
+            raise HTTPException(400, str(e) or "Those options aren't valid.")
+        except TypeError:
             raise HTTPException(400, "Those options aren't valid.")
         dest = jobs.job_dir(job["id"]) / ("source" + meta["ext"])
         try:
@@ -943,12 +995,92 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     return jobs.public(job)
 
 
+def _clip_or_404(jid: str, cid: str):
+    job = _job_or_404(jid)
+    clip = next((c for c in job["clips"] if c["id"] == cid), None)
+    if not clip:
+        raise HTTPException(404, "No such clip")
+    return job, clip
+
+
+@app.post("/api/jobs/{jid}/clips/{cid}/preview")
+def clip_preview(jid: str, cid: str, body: dict = Body(...)):
+    """One picture of this clip in a layout, so the layout can be seen before the clip is re-made."""
+    job, clip = _clip_or_404(jid, cid)
+    layout = str((body or {}).get("layout") or "")
+    if layout not in render.LAYOUTS:
+        raise HTTPException(400, "That is not a layout PeakCut knows.")
+    _throttle("preview:" + ctx.uid(), 60, 600, "That's a lot of previews in a short time. Wait a minute.")
+    try:
+        name = jobs.preview(jid, cid, layout)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001 - a preview must never break the page
+        raise HTTPException(500, f"Could not draw this preview: {safe.friendly(e, 200)}")
+    return {"preview": name, "version": clip.get("version", 0)}
+
+
+@app.post("/api/jobs/{jid}/stop")
+def stop_job(jid: str):
+    job = _job_or_404(jid)
+    if not jobs.stop(jid):
+        raise HTTPException(409, "This video isn't being worked on, so there is nothing to stop.")
+    return jobs.public(job)
+
+
+@app.post("/api/jobs/{jid}/retry")
+def retry_job(jid: str):
+    job = _job_or_404(jid)
+    _throttle("retry:" + ctx.uid(), 20, 600, "That's a lot of retries in a short time. Wait a few minutes.")
+    if not jobs.retry(jid):
+        raise HTTPException(409, "Only a video that stopped or failed can be started again.")
+    return jobs.public(job)
+
+
+@app.put("/api/jobs/{jid}/clips/{cid}/text")
+def clip_text(jid: str, cid: str, body: dict = Body(...)):
+    """Save a clip's title, description and hashtags. The video is not made again."""
+    job, clip = _clip_or_404(jid, cid)
+    _throttle("cliptext:" + ctx.uid(), 120, 600)
+    try:
+        jobs.save_post_text(job, clip, body)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    return jobs.public(job)
+
+
+@app.post("/api/jobs/{jid}/clips/{cid}/write")
+def clip_write(jid: str, cid: str):
+    """Ask the AI for a new title, description and hashtags for one clip. Returned to the page, not saved."""
+    job, clip = _clip_or_404(jid, cid)
+    _throttle("clipwrite:" + ctx.uid(), 20, 600, "That's a lot of rewrites in a short time. Wait a few minutes.")
+    usage.set_context(job.get("creator"), job.get("title") or "")
+    try:
+        return brain.post_text(jobs.spoken_in(job, clip), job.get("title") or "", job.get("uploader") or "",
+                               game=job.get("game"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)
     if job["status"] in ("queued", "running", "live") or jid in live.SESSIONS:
         raise HTTPException(409, "This is still being worked on. Stop it or wait for it to finish first.")
     jobs.delete(jid)
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str):
+    """Cancel a queued or running job. The pipeline stops at the next safe checkpoint."""
+    job = _job_or_404(jid)
+    if job["status"] not in ("queued", "running"):
+        raise HTTPException(409, "This video is not currently being processed.")
+    if not jobs.cancel(jid):
+        raise HTTPException(409, "Could not cancel this video.")
     return {"ok": True}
 
 
@@ -1026,10 +1158,17 @@ def delete_my_account(request: Request, body: dict = Body(...)):
 def media_file(jid: str, name: str, download: int = 0):
     if not re.fullmatch(r"[\w\-]+\.(mp4|jpg)", name):
         raise HTTPException(404)
-    f = Path(_job_or_404(jid)["dir"]) / "clips" / name
+    job = _job_or_404(jid)
+    f = Path(job["dir"]) / "clips" / name
     if not f.is_file():
         raise HTTPException(404)
-    return FileResponse(f, filename=name if download else None, headers={"Cache-Control": "private, max-age=300"})
+    save_as = name
+    if download and name.endswith(".mp4"):
+        # a clip is saved under its title, not "clip01.mp4", the same as when several are downloaded as a zip
+        clip = next((c for c in job.get("clips", []) if Path(str(c.get("file") or "")).name == name), None)
+        if clip:
+            save_as = account.clip_title_name(clip, Path(name).stem) + ".mp4"
+    return FileResponse(f, filename=save_as if download else None, headers={"Cache-Control": "private, max-age=300"})
 
 
 # ================================================================ creators and live recording
@@ -1267,7 +1406,8 @@ def ai_put(request: Request, body: dict = Body(...)):
     k = body.get("key")
     try:
         out = ai.save(body.get("provider"), body.get("models"), body.get("base_url") or "",
-                      None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k))
+                      None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k),
+                      slow=body.get("slow"), wait=body.get("wait"))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     usage.forget_all()
@@ -1449,6 +1589,34 @@ def apps_put(request: Request, body: dict = Body(...)):
         raise HTTPException(400, str(e))
 
 
+# ---------------------------------------------------------------- YouTube cookies, for servers YouTube refuses
+# A secret like a password: it is saved to a file only this server reads, and never sent back to the page.
+@app.get("/api/youtube-cookies")
+def yt_cookies_get(request: Request):
+    _admin(request)
+    f = config.YT_COOKIES
+    return {"saved": f.is_file(), "updated": int(f.stat().st_mtime) if f.is_file() else 0}
+
+
+@app.put("/api/youtube-cookies")
+def yt_cookies_put(request: Request, body: dict = Body(...)):
+    _admin(request)
+    f, text = config.YT_COOKIES, str(body.get("text") or "")
+    if body.get("remove"):
+        f.unlink(missing_ok=True)
+    else:
+        rows = [l.split("\t") for l in text.splitlines() if l.strip() and not l.startswith("# ")]
+        if len(text) > 1_000_000 or not any(len(r) == 7 and "youtube.com" in r[0] for r in rows):
+            raise HTTPException(400, "That doesn't look like a cookies.txt file with YouTube cookies in it. Export it "
+                                     "from a browser signed in to YouTube, with an extension such as \"Get cookies.txt LOCALLY\".")
+        text = text if text.startswith("# Netscape") else "# Netscape HTTP Cookie File\n" + text
+        f.write_text(text, encoding="utf-8")
+        with contextlib.suppress(OSError):
+            f.chmod(0o600)
+    media._yt_refused_until = 0.0        # try YouTube again straight away
+    return yt_cookies_get(request)
+
+
 @app.post("/api/posts")
 def add_posts(body: dict = Body(...)):
     job = jobs.get(str(body.get("job")))
@@ -1549,10 +1717,10 @@ def main():
         # restart by itself whenever the server code changes (pages in web/ never need a restart)
         uvicorn.run("studio.server:app", host=config.HOST, port=config.PORT, log_level="warning", backlog=4096, reload=True,
                     reload_dirs=[str(config.ROOT / "studio")], reload_includes=["*.py"],
-                    proxy_headers=bool(config.env("PEAKCUT_TRUST_PROXY")), forwarded_allow_ips="*")
+                    proxy_headers=_trust_proxy(), forwarded_allow_ips=list(_PROXY_CIDRS))
         return
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning", backlog=4096,
-                proxy_headers=bool(config.env("PEAKCUT_TRUST_PROXY")), forwarded_allow_ips="*")
+                proxy_headers=_trust_proxy(), forwarded_allow_ips=list(_PROXY_CIDRS))
 
 
 if __name__ == "__main__":
