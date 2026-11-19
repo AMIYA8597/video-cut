@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import alerts, auth, brain, config, creators, ctx, facecam, games, jobs, load, media, transcribe, usage
+from . import alerts, auth, brain, config, creators, ctx, facecam, games, hashtags, jobs, load, media, transcribe, usage
 
 # ":username!user@host PRIVMSG #channel :the message"
 _NICK = re.compile(r"(?m)^:([A-Za-z0-9_]{2,25})!")
@@ -635,6 +635,12 @@ class Session:
         self.n += 1
         c.update(id=f"clip{self.n:03d}", style=self.settings["style"], layout=self.settings["layout"],
                  captions=self.job["options"].get("captions", True), status="queued", version=0, made_at=time.time())
+        if self.job["options"].get("hook_text"):      # the person's own big text, in place of the AI's
+            c["hook"] = self.job["options"]["hook_text"]
+        if self.job["options"].get("description_text"):
+            c["description"], c["fixed_description"] = self.job["options"]["description_text"], True
+        else:
+            hashtags.apply(c, self.words, self.job.get("title", ""), self.job.get("uploader", ""), self._game())
         with self.lock:
             self.job["clips"].append(c)
         jobs.save(self.job)

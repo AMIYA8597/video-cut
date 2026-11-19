@@ -124,7 +124,9 @@ def credit_line(creator, uploader=""):
 
 
 def _caption(clip, creator, uploader=""):
-    tags = " ".join("#" + h for h in clip.get("hashtags", []))
+    # A description the person wrote themselves is posted as it is, without the AI's hashtags added to it, and
+    # one that already ends with its hashtags does not get them twice. The credit line is still added.
+    tags = "" if clip.get("fixed_description") or clip.get("hashtags_in_description") else " ".join("#" + h for h in clip.get("hashtags", []))
     line = credit_line(creator, uploader)
     return "\n\n".join(x for x in (clip.get("description", ""), line, tags, creator.get("post_footer", "")) if x)
 

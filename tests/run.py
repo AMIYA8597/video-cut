@@ -19,7 +19,14 @@ BASE = f"http://127.0.0.1:{PORT}"
 
 
 def main() -> int:
-    data = Path(tempfile.mkdtemp(prefix="peakcut-test-"))
+    # A Windows console cannot show every character the tests print, and one it cannot show used to stop the whole
+    # run halfway. Anything it cannot show is now printed as "?" instead.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    data =Path(tempfile.mkdtemp(prefix="peakcut-test-"))
     env = {**os.environ, "PEAKCUT_DATA": str(data), "PEAKCUT_PORT": str(PORT), "PEAKCUT_PUBLIC_URL": BASE,
            "PEAKCUT_HOST": "127.0.0.1", "PEAKCUT_AUTO_RELOAD": "0", "DATABASE_URL": "",
            "PEAKCUT_ACCOUNTS": "1", "PEAKCUT_FETCH_MODEL": "0", "PEAKCUT_UPDATE_CHECK": "0",                   # these tests are about people signing in; tests/test_local.py covers the default
@@ -51,6 +58,8 @@ def main() -> int:
                 ("a day-long video in little memory", ["tests/test_longvideo.py"]),
                 ("deleting and bulk actions", ["tests/test_delete.py"]),
                 ("saving a video when Windows says busy", ["tests/test_jobsave.py"]),
+                ("your own big text on the clips", ["tests/test_bigtext.py"]),
+                ("hashtags made without an AI", ["tests/test_hashtags.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
                 ("AI services", ["tests/test_ai.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
