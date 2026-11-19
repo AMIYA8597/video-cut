@@ -17,11 +17,17 @@ _lock = threading.RLock()
 DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 15, "max_len": 60,
             "max_clips": 6, "min_score": 80, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
             "plan": "free", "decide_mode": "both", "must_clip_min": 0, "min_gap_min": 2,
-            "game": "",
+            "game": "", "hook_text": "",
             "trigger_words": "clip that, clip it",
             "autopost": False, "accounts": [], "post_min_score": 75, "post_gap_min": 45, "daily_cap": 6,
             "privacy": "public", "post_footer": "", "rate_per_1k": 0.0, "channels": {}}
 PLATFORMS = ("youtube", "twitch", "kick")
+
+
+def clean_hook(v) -> str:
+    """The big text a person typed for their clips: one line, as they wrote it (links and @names stay, a campaign
+    may need them), and short enough to sit in the box on the video."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(v or "")).split())[:60]
 
 
 def platform_key(url: str) -> str:
@@ -72,6 +78,8 @@ def _clean(data: dict) -> dict:
             v = {p: str(u).strip()[:300] for p, u in (v.items() if isinstance(v, dict) else []) if p in PLATFORMS and str(u).strip()}
         elif k == "accounts":
             v = [str(x) for x in v][:20] if isinstance(v, list) else []
+        elif k == "hook_text":
+            v = clean_hook(v)
         elif k == "rate_per_1k":
             v = max(0.0, min(1000.0, float(v or 0)))
         elif k == "plan":
