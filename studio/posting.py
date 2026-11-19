@@ -101,7 +101,8 @@ def on_clip_ready(job, clip):
 
 
 def _caption(clip, creator):
-    tags = " ".join("#" + h for h in clip.get("hashtags", []))
+    # A description the person wrote themselves is posted as it is, without the AI's hashtags added to it.
+    tags = "" if clip.get("fixed_description") else " ".join("#" + h for h in clip.get("hashtags", []))
     return "\n\n".join(x for x in (clip.get("description", ""), tags, creator.get("post_footer", "")) if x)
 
 

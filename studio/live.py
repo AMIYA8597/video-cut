@@ -575,6 +575,8 @@ class Session:
                  captions=self.job["options"].get("captions", True), status="queued", version=0, made_at=time.time())
         if self.job["options"].get("hook_text"):      # the person's own big text, in place of the AI's
             c["hook"] = self.job["options"]["hook_text"]
+        if self.job["options"].get("description_text"):
+            c["description"], c["fixed_description"] = self.job["options"]["description_text"], True
         with self.lock:
             self.job["clips"].append(c)
         jobs.save(self.job)
