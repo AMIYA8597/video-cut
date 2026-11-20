@@ -95,6 +95,10 @@ def parse_moments(text, limit=MAX_MOMENTS) -> list:
             out.append({"start": start, "end": end, "note": note[:200]})
         if len(out) > limit:
             raise ValueError(f"That's more than {limit} moments. Add the rest as another video.")
+    if not out and str(text or "").strip():
+        # Something was typed but none of it is a time. Without this the whole video was clipped instead, which
+        # is not what was asked for and spends the AI's free allowance on it.
+        raise ValueError("None of the moments has a time in it. Write each one like 1:05:10 – 1:06:09, or leave the box empty.")
     return out
 
 

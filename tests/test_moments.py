@@ -39,7 +39,10 @@ check("a link with t= is a start", (ms[2]["start"], ms[2]["end"]), (3910.0, None
 check("a note before the times", ms[3]["note"], "Best part")
 check("end before start is refused", raises(lambda: stamps.parse_moments("3:38 - 2:39")), lambda e: e and "after the start" in e)
 check("a line with numbers but no time is refused", raises(lambda: stamps.parse_moments("clip at 12")), lambda e: bool(e))
-check("plain words are skipped", stamps.parse_moments("my favourite bits"), [])
+check("plain words next to real times are skipped", stamps.parse_moments("my favourite bits\n1:00-1:30"), [{"start": 60.0, "end": 90.0, "note": ""}])
+check("words alone, with no time at all, are refused instead of clipping the whole video",
+      raises(lambda: stamps.parse_moments("my favourite bits")), lambda e: e and "has a time" in e)
+check("an empty box is no moments at all", stamps.parse_moments("   "), [])
 check("too many is refused", raises(lambda: stamps.parse_moments("\n".join(f"{i}:00-{i}:30" for i in range(1, 30)))),
       lambda e: e and "more than" in e)
 
