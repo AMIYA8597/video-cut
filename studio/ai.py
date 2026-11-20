@@ -304,8 +304,8 @@ def explain(e) -> str:
     text, low = str(e), str(e).lower()
     if provider() == "ollama" and isinstance(e, httpx.ReadTimeout):
         # it was reached and started; it is just too slow for the work given to it
-        return (f"Ollama is running but answers too slowly for this many recordings at once. Record fewer streams, "
-                f"pick a smaller model under Settings, AI, or allow a longer wait (PEAKCUT_LIVE_AI_TIMEOUT).")
+        return ("Ollama is running but answers too slowly for this many recordings at once. Record fewer streams, "
+                "pick a smaller model under Settings, AI, or allow a longer wait (PEAKCUT_LIVE_AI_TIMEOUT).")
     name = shown_model() or "?"
     m = re.match(r"HTTP (\d{3})\b", text)
     status = m.group(1) if m else ""
@@ -579,7 +579,7 @@ def _openai(model, prompt, schema, timeout=None):
         reserve = min(budget, LOCAL_ANSWER_SECS)
         start = time.monotonic()
         if not _local_gate.acquire(timeout=max(budget - reserve, 0.01)):
-            raise Busy(f"The AI on this machine was busy with other streams; this check was skipped.")
+            raise Busy("The AI on this machine was busy with other streams; this check was skipped.")
         budget = max(budget - (time.monotonic() - start), reserve)
     try:
         for extra in extras:

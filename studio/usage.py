@@ -8,7 +8,7 @@ from collections import defaultdict
 
 import sqlalchemy as sa
 
-from . import ai, config, ctx, db
+from . import ai, ctx, db
 
 _where = threading.local()
 _brief: dict = {}    # user -> (when, summary). Dropped the moment they make another AI call.

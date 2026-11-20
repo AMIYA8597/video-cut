@@ -932,7 +932,6 @@ def start_session(creator: dict, url=None) -> dict:
 
 def _watch_user(uid):
     """Start recording any of this user's auto-record creators who have gone live."""
-    from . import profiles
     with ctx.as_user(uid):
         try:
             todo = [c for c in creators.all_creators() if c["auto_watch"] and c["channel"]]

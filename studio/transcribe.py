@@ -276,7 +276,6 @@ def _decode_remote(pieces: list) -> list:
 def transcribe(audio: np.ndarray, on_progress=None) -> list:
     """Returns [{'w': word, 's': start_sec, 'e': end_sec}, ...] for the whole audio.
     Speech is cut at quiet moments into 12-24 s pieces; silent pieces are skipped."""
-    global _remote_down_until
     if config.ASR_BACKEND == "whisper":
         from . import whisper
         return whisper.transcribe(audio, on_progress)

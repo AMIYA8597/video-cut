@@ -808,12 +808,20 @@ def _run_moments(job, wins, game, notes, t0):
             pad = 0.0 if w["pick"] else 2.0           # a little either side, so the clip can be re-trimmed later
             want = max(0.0, s - pad)
             until = e + pad if not job.get("duration") else min(job["duration"], e + pad)
-            try:
-                piece = media.download_section(url, d / "clips", f"m{i + 1:02d}.src", want, until,
-                                               int(o["quality"]), exact=True)
-            except Exception as ex:  # noqa: BLE001
-                _check_stop(job)
-                notes.append(f"Couldn't download {stamps.fmt(s)} to {stamps.fmt(e)}: {safe.friendly(ex, 160)}")
+            # A short download now and then fails for no lasting reason (the connection drops, ffmpeg stops
+            # halfway), so each moment is tried twice before it is given up on.
+            for attempt in (1, 2):
+                try:
+                    piece = media.download_section(url, d / "clips", f"m{i + 1:02d}.src", want, until,
+                                                   int(o["quality"]), exact=True)
+                    break
+                except Exception as ex:  # noqa: BLE001
+                    _check_stop(job)
+                    for left in (d / "clips").glob(f"m{i + 1:02d}.src.*"):   # half-finished pieces of the try that failed
+                        left.unlink(missing_ok=True)
+                    if attempt == 2:
+                        notes.append(f"Couldn't download {stamps.fmt(s)} to {stamps.fmt(e)}: {safe.friendly(ex, 160)}")
+            if piece is None:
                 continue
             pm = media.probe(piece)
             job.setdefault("width", pm["width"])
@@ -1197,10 +1205,11 @@ def _run_job(job):
             words = [w for w in words if not a_s <= w["s"] < b_s] + tw
         words.sort(key=lambda w: w["s"])
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
-    renders.shutdown(wait=False)
-    ahead.shutdown(wait=False)
+    # Clips given up on while still waiting their turn are dropped here, so they never start after the video is
+    # finished. (The audio is not deleted by hand: a clip that was stopped may still be holding on to it.)
+    renders.shutdown(wait=False, cancel_futures=True)
+    ahead.shutdown(wait=False, cancel_futures=True)
     fetch.shutdown(wait=False)
-    del audio
     clips = job["clips"]
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
