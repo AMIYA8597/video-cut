@@ -101,9 +101,12 @@ check("tokens are counted", info["tokens"] == 5 * 60 and info["model"] == "free-
 mode["fail"] = True
 asked.clear()
 loud = np.abs(np.sin(np.arange(1200) / 7.0)) * 3
-clips, info = brain.find_clips(words, loud, 1200.0, "T", "U", max_clips=4, min_len=15, max_len=60, log=lambda m: None)
+logged = []
+clips, info = brain.find_clips(words, loud, 1200.0, "T", "U", max_clips=4, min_len=15, max_len=60, log=logged.append)
 check("with the AI down, the count is still made", len(clips) == 4, str(len(clips)))
 check("and it says so", "loudness" in info["note"], str(info))
+check("it stops asking after a few misses in a row, instead of waiting through every try",
+      sum("failed" in m for m in logged) == brain.SLOW_MISSES, str(logged))
 mode["fail"] = False
 
 # ---- cancelled: nothing more is asked

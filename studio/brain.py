@@ -290,6 +290,7 @@ is only decent, return it. Do not return an empty list. This replaces the rule b
 """
 WEAK_RULE = "- Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping."
 SLOW_WINDOW_SEC = 10 * 60      # a smaller piece of the video per request: a free model reads less at a time
+SLOW_MISSES = 4                # requests in a row with nothing new before the AI is not asked again
 
 
 def _find_slowly(words, db, lines, duration, title, uploader, max_clips, min_len, max_len, log, game, stop, status):
@@ -309,8 +310,13 @@ def _find_slowly(words, db, lines, duration, title, uploader, max_clips, min_len
                         "Pick the one best moment that would work as a standalone clip for")
     rules = RULES.replace(WEAK_RULE, "- Pick something a stranger would still enjoy. Every clip must make sense on its own.")
     extra, clips, used_model, tokens = _game_rules(game), [], None, 0
+    misses = 0      # requests in a row that gave nothing new
     for attempt in range(max_clips * 3 + len(windows)):
         if len(clips) >= max_clips or not windows or stopped():
+            break
+        if misses >= SLOW_MISSES:
+            # A short video has run out of separate moments: asking again only waits, so loudness fills the rest
+            log(f"The AI found nothing new {misses} times in a row; the rest are picked by loudness.")
             break
         a, b = windows[attempt % len(windows)]
         chunk = [l for l in lines if a <= l["s"] < b]
@@ -326,6 +332,7 @@ def _find_slowly(words, db, lines, duration, title, uploader, max_clips, min_len
             tokens += spent
         except Exception as e:  # noqa: BLE001
             log(f"AI request for clip {len(clips) + 1} failed: {e}")
+            misses += 1
             continue
         for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
             if not a - 5 <= _num(c.get("start"), -1) < b:
@@ -334,8 +341,10 @@ def _find_slowly(words, db, lines, duration, title, uploader, max_clips, min_len
             if e - s < min(min_len, duration) - 1 or _overlaps(s, e, clips):
                 continue
             clips.append(_tidy(c, s, e, game))
+            misses = 0
             break
         else:
+            misses += 1
             log(f"The AI gave nothing new for {a:.0f}-{b:.0f}s; trying another part.")
     note = ""
     if len(clips) < max_clips and not stopped():

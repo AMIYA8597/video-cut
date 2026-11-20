@@ -1211,8 +1211,10 @@ def _run_job(job):
     ahead.shutdown(wait=False, cancel_futures=True)
     fetch.shutdown(wait=False)
     clips = job["clips"]
+    # Say so on the page when some of the clips were picked by loudness because the AI did not supply enough.
+    partly = next((n for n in reversed(notes) if "picked by loudness" in n), "")
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
-                 "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
+                 "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else partly}
     stage = "Done" if clips else "Done, but nothing clip-worthy was found"
     _set(job, status="done", stage=stage, progress=1.0, took=round(time.time() - t0))
     try:
